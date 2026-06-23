@@ -1,0 +1,16 @@
+[Unit]
+Description=FastAPI — TP Observabilité Avancée
+After=network.target
+
+[Service]
+User=fastapi
+WorkingDirectory=/opt/fastapi_app
+ExecStart=/opt/fastapi_app/venv/bin/uvicorn app:app --host 0.0.0.0 --port 5000
+Restart=on-failure
+RestartSec=5s
+# Logs Uvicorn → journald → Filebeat les lira via journald ou fichier dédié
+StandardOutput=append:/var/log/api-fastapi.log
+StandardError=append:/var/log/api-fastapi.log
+
+[Install]
+WantedBy=multi-user.target

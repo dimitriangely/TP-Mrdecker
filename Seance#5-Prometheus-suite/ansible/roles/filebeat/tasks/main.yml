@@ -1,0 +1,49 @@
+---
+# ── Installation Filebeat via dépôt APT Elastic ───────────────────────────────
+
+- name: "filebeat | Installer les dépendances"
+  ansible.builtin.apt:
+    name: [apt-transport-https, gnupg2]
+    state: present
+    update_cache: true
+
+- name: "filebeat | Ajouter la clé GPG Elastic"
+  ansible.builtin.shell:
+    cmd: |
+      wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | \
+      gpg --dearmor -o /etc/apt/keyrings/elastic.gpg
+    creates: /etc/apt/keyrings/elastic.gpg
+
+- name: "filebeat | Créer le répertoire keyrings"
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: "filebeat | Ajouter le dépôt Elastic 8.x"
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/elastic.gpg] https://artifacts.elastic.co/packages/8.x/apt stable main"
+    state: present
+    filename: elastic-8
+
+- name: "filebeat | Installer filebeat"
+  ansible.builtin.apt:
+    name: "filebeat={{ filebeat_version }}"
+    state: present
+    update_cache: true
+
+- name: "filebeat | Déployer la configuration"
+  ansible.builtin.template:
+    src: filebeat.yml.j2
+    dest: /etc/filebeat/filebeat.yml
+    owner: root
+    group: root
+    mode: "0600"
+  # mode 0600 : filebeat refuse de démarrer si le fichier est lisible par tous
+
+- name: "filebeat | Activer et démarrer"
+  ansible.builtin.systemd:
+    name: filebeat
+    enabled: true
+    state: started
+    daemon_reload: true

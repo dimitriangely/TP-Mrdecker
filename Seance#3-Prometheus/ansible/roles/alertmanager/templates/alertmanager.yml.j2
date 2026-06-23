@@ -1,0 +1,16 @@
+# /etc/alertmanager/alertmanager.yml
+# Généré par Ansible
+
+route:
+  # Délai avant d'envoyer la première notification
+  group_wait: 10s
+  # Délai avant de renvoyer si le groupe s'est élargi
+  group_interval: 1m
+  # Délai avant de répéter une alerte déjà envoyée
+  repeat_interval: 1h
+  receiver: 'log-only'
+
+receivers:
+  # En lab : on log simplement les alertes (pas de mail/Slack configuré)
+  - name: 'log-only'
+    webhook_configs: []

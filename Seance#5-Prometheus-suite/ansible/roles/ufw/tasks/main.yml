@@ -1,0 +1,55 @@
+---
+# ── Pare-feu UFW sur VM 1 ─────────────────────────────────────────────────────
+# Objectif : n'autoriser que la VM monitoring à scraper :9100 et :5000
+# Tout autre accès externe à ces ports est bloqué.
+
+- name: "ufw | Installer ufw"
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: "ufw | Autoriser SSH (évite de se couper l'accès)"
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+  # CRITIQUE : toujours autoriser SSH avant d'activer ufw
+  # sinon Vagrant perd la connexion SSH et la VM devient inaccessible.
+
+- name: "ufw | Autoriser VM monitoring → Node Exporter :9100"
+  community.general.ufw:
+    rule: allow
+    src: "{{ monitoring_ip }}"
+    port: "9100"
+    proto: tcp
+
+- name: "ufw | Autoriser VM monitoring → FastAPI :5000"
+  community.general.ufw:
+    rule: allow
+    src: "{{ monitoring_ip }}"
+    port: "5000"
+    proto: tcp
+
+- name: "ufw | Autoriser accès hôte Windows → FastAPI :5000 (NAT VirtualBox)"
+  community.general.ufw:
+    rule: allow
+    port: "5000"
+    proto: tcp
+  # Le forwarded_port Vagrant passe par 10.0.2.2 (interface NAT VirtualBox)
+  # On autorise le port globalement pour ne pas bloquer l'accès depuis l'hôte.
+
+- name: "ufw | Activer UFW avec politique par défaut deny"
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming
+  # policy: deny = tout ce qui n'est pas explicitement autorisé est bloqué
+
+- name: "ufw | Vérifier le statut"
+  ansible.builtin.command: ufw status verbose
+  register: ufw_status
+  changed_when: false
+
+- name: "ufw | Afficher les règles actives"
+  ansible.builtin.debug:
+    var: ufw_status.stdout_lines

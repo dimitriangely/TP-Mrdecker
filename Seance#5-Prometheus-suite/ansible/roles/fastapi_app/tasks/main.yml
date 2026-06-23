@@ -1,0 +1,82 @@
+---
+- name: "fastapi | Installer python3, pip3 et venv"
+  ansible.builtin.apt:
+    name: [python3, python3-pip, python3-venv]
+    state: present
+    update_cache: true
+
+- name: "fastapi | Créer l'utilisateur système"
+  ansible.builtin.user:
+    name: "{{ fastapi_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: "fastapi | Créer le répertoire de l'application"
+  ansible.builtin.file:
+    path: "{{ fastapi_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: "fastapi | Créer le fichier de log"
+  ansible.builtin.file:
+    path: "{{ fastapi_log }}"
+    state: touch
+    owner: "{{ fastapi_user }}"
+    group: "{{ fastapi_user }}"
+    mode: "0644"
+
+- name: "fastapi | Copier app.py"
+  ansible.builtin.copy:
+    src: /vagrant/app/app.py
+    dest: "{{ fastapi_dir }}/app.py"
+    mode: "0644"
+    remote_src: true
+  notify: restart fastapi
+
+- name: "fastapi | Copier requirements.txt"
+  ansible.builtin.copy:
+    src: /vagrant/app/requirements.txt
+    dest: "{{ fastapi_dir }}/requirements.txt"
+    mode: "0644"
+    remote_src: true
+
+- name: "fastapi | Créer le virtualenv"
+  ansible.builtin.command:
+    cmd: python3 -m venv "{{ fastapi_dir }}/venv"
+    creates: "{{ fastapi_dir }}/venv/bin/activate"
+
+- name: "fastapi | Installer les dépendances"
+  ansible.builtin.pip:
+    requirements: "{{ fastapi_dir }}/requirements.txt"
+    virtualenv: "{{ fastapi_dir }}/venv"
+
+- name: "fastapi | Corriger les permissions"
+  ansible.builtin.file:
+    path: "{{ fastapi_dir }}"
+    state: directory
+    owner: "{{ fastapi_user }}"
+    group: "{{ fastapi_user }}"
+    recurse: true
+
+- name: "fastapi | Déployer le service systemd"
+  ansible.builtin.copy:
+    src: /vagrant/app/api-fastapi.service
+    dest: /etc/systemd/system/api-fastapi.service
+    mode: "0644"
+    remote_src: true
+  notify: restart fastapi
+
+- name: "fastapi | Activer et démarrer"
+  ansible.builtin.systemd:
+    name: api-fastapi
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: "fastapi | Vérifier le port {{ fastapi_port }}"
+  ansible.builtin.wait_for:
+    port: "{{ fastapi_port }}"
+    timeout: 20

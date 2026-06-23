@@ -1,0 +1,43 @@
+groups:
+  - name: alertes-fastapi
+    rules:
+
+      # Instance injoignable (node_exporter ou FastAPI)
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "L'instance {{ $labels.instance }} est injoignable"
+          description: "{{ $labels.job }}/{{ $labels.instance }} ne répond plus depuis 1 minute."
+
+      # Taux d'erreurs HTTP 500 élevé
+      - alert: CodeErreurHaut
+        expr: rate(api_requests_total{status_code="500"}[5m]) > 0.5
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taux d'erreur HTTP 500 élevé sur l'API FastAPI"
+          description: "Plus de 0.5 erreurs/s depuis 30 secondes."
+
+      # Surcharge CPU VM 1
+      - alert: CPUHigh
+        expr: (1 - avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[2m]))) > 0.9
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU surchargé sur {{ $labels.instance }}"
+          description: "CPU > 90% depuis plus d'1 minute."
+
+      # Latence élevée API (p95 > 1 seconde)
+      - alert: LatenceElevee
+        expr: histogram_quantile(0.95, rate(api_request_duration_seconds_bucket[5m])) > 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latence p95 > 1s sur l'API FastAPI"
+          description: "95% des requêtes prennent plus d'1 seconde."

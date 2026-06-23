@@ -1,0 +1,14 @@
+---
+# playbook-monitoring.yml
+# VM 2 (192.168.56.20) : supervision centralisée + ELK
+
+- name: "Stack monitoring — VM 2"
+  hosts: all
+  become: true
+
+  roles:
+    - prometheus        # 1. Scrape métriques VM 1 (node_exporter + fastapi)
+    - grafana           # 2. Visualisation des métriques
+    - elasticsearch     # 3. Stockage des logs structurés
+    - logstash          # 4. Réception + parsing Grok des logs Filebeat
+    - kibana            # 5. Visualisation des logs

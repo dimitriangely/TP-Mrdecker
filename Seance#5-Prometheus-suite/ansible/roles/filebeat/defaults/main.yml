@@ -1,0 +1,5 @@
+---
+filebeat_version: "8.14.1"
+logstash_host: "192.168.56.20"
+logstash_port: 5044
+fastapi_log: /var/log/api-fastapi.log

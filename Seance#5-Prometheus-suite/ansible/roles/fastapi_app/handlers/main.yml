@@ -1,0 +1,5 @@
+---
+- name: restart fastapi
+  ansible.builtin.systemd:
+    name: api-fastapi
+    state: restarted

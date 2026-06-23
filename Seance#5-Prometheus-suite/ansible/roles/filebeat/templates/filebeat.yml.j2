@@ -1,0 +1,35 @@
+# /etc/filebeat/filebeat.yml
+# Généré par Ansible — Filebeat sur VM 1 (cible)
+
+filebeat.inputs:
+  # Lecture du fichier de log de l'API FastAPI
+  # Uvicorn écrit dans ce fichier via StandardOutput dans le .service
+  - type: log
+    enabled: true
+    paths:
+      - {{ fastapi_log }}
+    fields:
+      service: api-fastapi
+      host_role: cible
+    fields_under_root: true
+    # multiline : une entrée de log peut s'étendre sur plusieurs lignes
+    # (stack traces Python par exemple)
+    multiline.pattern: '^(INFO|WARNING|ERROR|CRITICAL):'
+    multiline.negate: true
+    multiline.match: after
+
+# Sortie vers Logstash sur VM 2
+output.logstash:
+  hosts: ["{{ logstash_host }}:{{ logstash_port }}"]
+  # Filebeat bufferise localement si Logstash est indisponible
+  # Les logs ne sont PAS perdus pendant une panne courte de Logstash
+
+# Désactiver la sortie Elasticsearch directe (on passe par Logstash pour le parsing Grok)
+# output.elasticsearch est mutuellement exclusif avec output.logstash
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 3

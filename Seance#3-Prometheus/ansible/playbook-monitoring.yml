@@ -1,0 +1,41 @@
+---
+- name: "Stack observabilité — VM monitoring"
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: "Copier alert.rules.yml dans /etc/prometheus"
+      ansible.builtin.copy:
+        src: /vagrant/ansible/alert.rules.yml
+        dest: /etc/prometheus/alert.rules.yml
+        owner: prometheus
+        group: prometheus
+        mode: "0644"
+        remote_src: true
+      # Ce fichier doit exister avant que Prometheus redémarre
+      # On le copie ici pour garantir l'ordre d'exécution
+      ignore_errors: true   # prometheus_dir peut ne pas exister au 1er run
+
+  roles:
+    - node_exporter     # 1. Métriques système
+    - prometheus        # 2. Collecteur (crée /etc/prometheus avant pre_tasks au 2e run)
+    - grafana           # 3. Visualisation
+    - flask_app         # 4. API Python instrumentée
+    - alertmanager      # 5. Gestionnaire d'alertes
+
+  post_tasks:
+    - name: "Copier alert.rules.yml dans /etc/prometheus (post-install)"
+      ansible.builtin.copy:
+        src: /vagrant/ansible/alert.rules.yml
+        dest: /etc/prometheus/alert.rules.yml
+        owner: prometheus
+        group: prometheus
+        mode: "0644"
+        remote_src: true
+
+    - name: "Recharger Prometheus pour appliquer les règles"
+      ansible.builtin.uri:
+        url: http://localhost:9090/-/reload
+        method: POST
+        status_code: 200
+      ignore_errors: true

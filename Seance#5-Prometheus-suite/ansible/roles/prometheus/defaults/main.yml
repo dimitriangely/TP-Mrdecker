@@ -1,0 +1,8 @@
+---
+prometheus_version: "2.52.0"
+prometheus_port: 9090
+prometheus_user: prometheus
+prometheus_config_dir: /etc/prometheus
+prometheus_data_dir: /var/lib/prometheus
+prometheus_install_dir: /usr/local/bin
+cible_ip: "192.168.56.10"

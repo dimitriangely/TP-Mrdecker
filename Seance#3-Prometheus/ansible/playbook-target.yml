@@ -1,0 +1,11 @@
+---
+# playbook-target.yml
+# Appliqué à la VM "target" (localhost dans ansible_local)
+# Installe uniquement Node Exporter — cette VM est une cible à surveiller
+
+- name: "Stack observabilité — VM target"
+  hosts: all
+  become: true
+
+  roles:
+    - node_exporter     # Expose les métriques système sur :9100

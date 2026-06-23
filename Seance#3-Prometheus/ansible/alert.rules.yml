@@ -1,0 +1,40 @@
+groups:
+  - name: alertes-infra-et-app
+    rules:
+
+      # ── Alerte 1 : instance injoignable ──────────────────────────────────────
+      # up == 0 signifie que Prometheus n'a pas pu scraper la cible
+      # for: 1m → ne se déclenche qu'après 1 minute continue en état DOWN
+      # (évite les faux positifs sur un redémarrage rapide)
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "L'instance {{ $labels.instance }} est injoignable"
+          description: "La cible {{ $labels.job }}/{{ $labels.instance }} ne répond plus depuis plus d'1 minute."
+
+      # ── Alerte 2 : taux d'erreur HTTP 500 élevé ──────────────────────────────
+      # rate() calcule le taux moyen par seconde sur 5 minutes
+      # > 0.5 = plus de 0.5 erreur/seconde = 30 erreurs/minute
+      - alert: CodeErreurHaut
+        expr: rate(api_requests_total{status_code="500"}[5m]) > 0.5
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taux d'erreur HTTP 500 critique sur l'API"
+          description: "Le taux d'erreurs 500 dépasse 0.5/s depuis 30 secondes."
+
+      # ── Alerte 3 : surcharge CPU ──────────────────────────────────────────────
+      # 1 - idle = temps CPU actif (toutes les VMs, tous les CPUs)
+      # > 0.9 = plus de 90% d'utilisation CPU
+      - alert: CPUHigh
+        expr: (1 - avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[2m]))) > 0.9
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU surchargé sur {{ $labels.instance }}"
+          description: "L'utilisation CPU dépasse 90% depuis plus d'1 minute."

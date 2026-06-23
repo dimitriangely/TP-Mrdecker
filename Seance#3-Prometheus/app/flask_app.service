@@ -1,0 +1,14 @@
+[Unit]
+Description=Flask API - TP Observabilité
+After=network.target
+
+[Service]
+User=flask_app
+WorkingDirectory=/opt/flask_app
+ExecStart=/opt/flask_app/venv/bin/python app.py
+Restart=on-failure
+RestartSec=5s
+Environment=FLASK_ENV=production
+
+[Install]
+WantedBy=multi-user.target

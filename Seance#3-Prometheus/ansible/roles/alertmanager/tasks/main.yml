@@ -1,0 +1,81 @@
+---
+- name: "alertmanager | Créer l'utilisateur système"
+  ansible.builtin.user:
+    name: "{{ alertmanager_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: "alertmanager | Créer les répertoires"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ alertmanager_user }}"
+    group: "{{ alertmanager_user }}"
+    mode: "0755"
+  loop:
+    - "{{ alertmanager_config_dir }}"
+    - "{{ alertmanager_data_dir }}"
+
+- name: "alertmanager | Télécharger l'archive"
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager_version }}/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+    dest: "/tmp/alertmanager-{{ alertmanager_version }}.tar.gz"
+    mode: "0644"
+
+- name: "alertmanager | Extraire l'archive"
+  ansible.builtin.unarchive:
+    src: "/tmp/alertmanager-{{ alertmanager_version }}.tar.gz"
+    dest: /tmp/
+    remote_src: true
+
+- name: "alertmanager | Copier le binaire"
+  ansible.builtin.copy:
+    src: "/tmp/alertmanager-{{ alertmanager_version }}.linux-amd64/alertmanager"
+    dest: "{{ alertmanager_install_dir }}/alertmanager"
+    owner: "{{ alertmanager_user }}"
+    group: "{{ alertmanager_user }}"
+    mode: "0755"
+    remote_src: true
+
+- name: "alertmanager | Déployer la configuration"
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: "{{ alertmanager_config_dir }}/alertmanager.yml"
+    owner: "{{ alertmanager_user }}"
+    group: "{{ alertmanager_user }}"
+    mode: "0644"
+  notify: restart alertmanager
+
+- name: "alertmanager | Créer le service systemd"
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/alertmanager.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Prometheus Alertmanager
+      After=network.target
+
+      [Service]
+      User={{ alertmanager_user }}
+      ExecStart={{ alertmanager_install_dir }}/alertmanager \
+        --config.file={{ alertmanager_config_dir }}/alertmanager.yml \
+        --storage.path={{ alertmanager_data_dir }} \
+        --web.listen-address=:{{ alertmanager_port }}
+      Restart=on-failure
+      RestartSec=5s
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: "alertmanager | Activer et démarrer"
+  ansible.builtin.systemd:
+    name: alertmanager
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: "alertmanager | Vérifier le port {{ alertmanager_port }}"
+  ansible.builtin.wait_for:
+    port: "{{ alertmanager_port }}"
+    timeout: 20

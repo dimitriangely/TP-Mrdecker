@@ -1,0 +1,50 @@
+# /etc/logstash/conf.d/fastapi.conf — Généré par Ansible
+# Pipeline : Filebeat (VM 1) → Logstash (VM 2) → Elasticsearch (VM 2)
+
+input {
+  # Écoute les événements envoyés par Filebeat sur le port 5044
+  beats {
+    port => {{ logstash_beats_port }}
+  }
+}
+
+filter {
+  # ── Filtre Grok ─────────────────────────────────────────────────────────────
+  # Objectif : transformer cette ligne brute Uvicorn :
+  #   INFO:     192.168.56.10:45322 - "GET /traitement HTTP/1.1" 200 OK
+  # En champs structurés : loglevel, client_ip, method, request, response_code
+  #
+  # Décomposition du pattern :
+  #   %{LOGLEVEL:loglevel}   → "INFO", "WARNING", "ERROR" (pattern built-in)
+  #   :\\s+                  → ":     " (deux-points + espaces)
+  #   %{IP:client_ip}        → "192.168.56.10" (adresse IP)
+  #   :%{NUMBER}             → ":45322" (port client, ignoré)
+  #   \s+-\s+                → " - "
+  #   "%{WORD:method}        → "GET"
+  #   \s+%{URIPATHPARAM:request} → "/traitement"
+  #   \s+HTTP/%{NUMBER}"     → "HTTP/1.1"
+  #   \s+%{NUMBER:response_code} → "200"
+
+  grok {
+    match => {
+      "message" => "%{LOGLEVEL:loglevel}:\s+%{IP:client_ip}:%{NUMBER} - \"%{WORD:method} %{URIPATHPARAM:request} HTTP/%{NUMBER}\" %{NUMBER:response_code}"
+    }
+    tag_on_failure => ["_grokparsefailure_fastapi"]
+    # tag_on_failure : si le pattern ne matche pas, le log est quand même stocké
+    # avec ce tag — permet de détecter les formats inattendus dans Kibana.
+  }
+
+  # Convertir response_code en entier pour les agrégations Kibana
+  mutate {
+    convert => { "response_code" => "integer" }
+  }
+}
+
+output {
+  # Envoi vers Elasticsearch dans un index daté
+  # logs-fastapi-2025.01.15 par exemple
+  elasticsearch {
+    hosts => ["{{ elasticsearch_host }}:{{ elasticsearch_port }}"]
+    index => "logs-fastapi-%{+YYYY.MM.dd}"
+  }
+}

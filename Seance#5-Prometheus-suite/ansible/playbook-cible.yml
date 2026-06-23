@@ -1,0 +1,13 @@
+---
+# playbook-cible.yml
+# VM 1 (192.168.56.10) : application + supervision locale + sécurité
+
+- name: "Stack cible — VM 1"
+  hosts: all
+  become: true
+
+  roles:
+    - node_exporter   # 1. Métriques système → scrapé par Prometheus (VM 2)
+    - fastapi_app     # 2. API FastAPI instrumentée avec middleware Prometheus
+    - ufw             # 3. Pare-feu : seule VM 2 peut scraper :9100 et :5000
+    - filebeat        # 4. Agent log : envoie les logs vers Logstash (VM 2)

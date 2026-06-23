@@ -1,0 +1,27 @@
+---
+- name: "logstash | Installer logstash (dépôt Elastic déjà ajouté par elasticsearch)"
+  ansible.builtin.apt:
+    name: logstash
+    state: present
+    update_cache: true
+
+- name: "logstash | Déployer le pipeline fastapi.conf"
+  ansible.builtin.template:
+    src: logstash.conf.j2
+    dest: /etc/logstash/conf.d/fastapi.conf
+    owner: root
+    group: logstash
+    mode: "0640"
+  notify: restart logstash
+
+- name: "logstash | Activer et démarrer"
+  ansible.builtin.systemd:
+    name: logstash
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: "logstash | Attendre le port {{ logstash_beats_port }} (démarrage lent ~60s)"
+  ansible.builtin.wait_for:
+    port: "{{ logstash_beats_port }}"
+    timeout: 180

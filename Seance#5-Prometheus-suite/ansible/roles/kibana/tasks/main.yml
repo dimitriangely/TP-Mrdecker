@@ -1,0 +1,28 @@
+---
+- name: "kibana | Installer kibana (dépôt Elastic déjà ajouté)"
+  ansible.builtin.apt:
+    name: kibana
+    state: present
+    update_cache: true
+
+- name: "kibana | Configurer l'hôte d'écoute et Elasticsearch"
+  ansible.builtin.lineinfile:
+    path: /etc/kibana/kibana.yml
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - { regexp: '^#?server.host:', line: 'server.host: "0.0.0.0"' }
+    - { regexp: '^#?elasticsearch.hosts:', line: 'elasticsearch.hosts: ["http://{{ elasticsearch_host }}:9200"]' }
+  notify: restart kibana
+
+- name: "kibana | Activer et démarrer"
+  ansible.builtin.systemd:
+    name: kibana
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: "kibana | Attendre le port {{ kibana_port }} (démarrage lent ~90s)"
+  ansible.builtin.wait_for:
+    port: "{{ kibana_port }}"
+    timeout: 180

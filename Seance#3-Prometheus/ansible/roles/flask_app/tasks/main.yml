@@ -1,0 +1,87 @@
+---
+# roles/flask_app/tasks/main.yml
+
+# ── 1. Dépendances système ────────────────────────────────────────────────────
+- name: "flask_app | Installer python3, pip3 et venv"
+  ansible.builtin.apt:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+    state: present
+    update_cache: true
+
+# ── 2. Utilisateur dédié ─────────────────────────────────────────────────────
+- name: "flask_app | Créer l'utilisateur flask_app"
+  ansible.builtin.user:
+    name: "{{ flask_app_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+# ── 3. Répertoire de l'application ───────────────────────────────────────────
+- name: "flask_app | Créer le répertoire de l'application"
+  ansible.builtin.file:
+    path: "{{ flask_app_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# ── 4. Copier les fichiers de l'application ───────────────────────────────────
+- name: "flask_app | Copier app.py"
+  ansible.builtin.copy:
+    src: /vagrant/app/app.py
+    dest: "{{ flask_app_dir }}/app.py"
+    mode: "0644"
+    remote_src: true
+  notify: restart flask_app
+
+- name: "flask_app | Copier requirements.txt"
+  ansible.builtin.copy:
+    src: /vagrant/app/requirements.txt
+    dest: "{{ flask_app_dir }}/requirements.txt"
+    mode: "0644"
+    remote_src: true
+
+# ── 5. Virtualenv et dépendances Python ──────────────────────────────────────
+# Exécuté en root — pas de become_user pour éviter le problème d'ACL filesystem
+- name: "flask_app | Créer le virtualenv"
+  ansible.builtin.command:
+    cmd: python3 -m venv "{{ flask_app_dir }}/venv"
+    creates: "{{ flask_app_dir }}/venv/bin/activate"
+
+- name: "flask_app | Installer les dépendances Python"
+  ansible.builtin.pip:
+    requirements: "{{ flask_app_dir }}/requirements.txt"
+    virtualenv: "{{ flask_app_dir }}/venv"
+
+- name: "flask_app | Corriger les permissions (propriétaire flask_app)"
+  ansible.builtin.file:
+    path: "{{ flask_app_dir }}"
+    state: directory
+    owner: "{{ flask_app_user }}"
+    group: "{{ flask_app_user }}"
+    recurse: true
+
+# ── 6. Service systemd ────────────────────────────────────────────────────────
+- name: "flask_app | Déployer le service systemd"
+  ansible.builtin.copy:
+    src: /vagrant/app/flask_app.service
+    dest: /etc/systemd/system/flask_app.service
+    mode: "0644"
+    remote_src: true
+  notify: restart flask_app
+
+- name: "flask_app | Recharger systemd et démarrer le service"
+  ansible.builtin.systemd:
+    name: flask_app
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# ── 7. Vérification ───────────────────────────────────────────────────────────
+- name: "flask_app | Vérifier que le port {{ flask_app_port }} répond"
+  ansible.builtin.wait_for:
+    port: "{{ flask_app_port }}"
+    timeout: 20

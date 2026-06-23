@@ -1,0 +1,58 @@
+Vagrant.configure("2") do |config|
+
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.box_check_update = false
+
+  # ─────────────────────────────────────────────
+  # VM 1 : cible  (FastAPI + Node Exporter + Filebeat + UFW)
+  # ─────────────────────────────────────────────
+  config.vm.define "cible" do |cib|
+    cib.vm.hostname = "cible"
+    cib.vm.network "private_network", ip: "192.168.56.10"
+
+    # Accès depuis le navigateur Windows
+    cib.vm.network "forwarded_port", guest: 5000, host: 5000   # FastAPI
+    cib.vm.network "forwarded_port", guest: 9100, host: 9100   # Node Exporter
+
+    cib.vm.provider "virtualbox" do |vb|
+      vb.name   = "tp-elk-cible"
+      vb.cpus   = 2
+      vb.memory = 2048
+      vb.linked_clone = true
+    end
+
+    cib.vm.provision "ansible_local" do |ansible|
+      ansible.playbook           = "ansible/playbook-cible.yml"
+      ansible.install            = true
+      ansible.compatibility_mode = "2.0"
+    end
+  end
+
+  # ─────────────────────────────────────────────
+  # VM 2 : monitoring  (Prometheus + Grafana + ELK)
+  # ─────────────────────────────────────────────
+  config.vm.define "monitoring" do |mon|
+    mon.vm.hostname = "monitoring"
+    mon.vm.network "private_network", ip: "192.168.56.20"
+
+    mon.vm.network "forwarded_port", guest: 9090, host: 9090   # Prometheus
+    mon.vm.network "forwarded_port", guest: 3000, host: 3000   # Grafana
+    mon.vm.network "forwarded_port", guest: 9200, host: 9200   # Elasticsearch
+    mon.vm.network "forwarded_port", guest: 5601, host: 5601   # Kibana
+    mon.vm.network "forwarded_port", guest: 5044, host: 5044   # Logstash Beats
+
+    mon.vm.provider "virtualbox" do |vb|
+      vb.name   = "tp-elk-monitoring"
+      vb.cpus   = 2
+      vb.memory = 4096   # ELK est gourmand — 4 Go minimum
+      vb.linked_clone = true
+    end
+
+    mon.vm.provision "ansible_local" do |ansible|
+      ansible.playbook           = "ansible/playbook-monitoring.yml"
+      ansible.install            = true
+      ansible.compatibility_mode = "2.0"
+    end
+  end
+
+end

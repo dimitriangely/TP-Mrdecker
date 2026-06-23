@@ -1,0 +1,4 @@
+---
+flask_app_port: 5000
+flask_app_dir: /opt/flask_app
+flask_app_user: flask_app

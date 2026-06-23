@@ -1,0 +1,64 @@
+---
+- name: "elasticsearch | Installer les dépendances"
+  ansible.builtin.apt:
+    name: [apt-transport-https, gnupg2]
+    state: present
+    update_cache: true
+
+- name: "elasticsearch | Créer le répertoire keyrings"
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: "elasticsearch | Ajouter la clé GPG Elastic"
+  ansible.builtin.shell:
+    cmd: |
+      wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | \
+      gpg --dearmor -o /etc/apt/keyrings/elastic.gpg
+    creates: /etc/apt/keyrings/elastic.gpg
+
+- name: "elasticsearch | Ajouter le dépôt Elastic 8.x"
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/elastic.gpg] https://artifacts.elastic.co/packages/8.x/apt stable main"
+    state: present
+    filename: elastic-8
+
+- name: "elasticsearch | Installer elasticsearch"
+  ansible.builtin.apt:
+    name: elasticsearch
+    state: present
+    update_cache: true
+
+- name: "elasticsearch | Désactiver la sécurité et écouter sur 0.0.0.0"
+  ansible.builtin.blockinfile:
+    path: /etc/elasticsearch/elasticsearch.yml
+    marker: "# {mark} ANSIBLE MANAGED BLOCK"
+    block: |
+      xpack.security.enabled: false
+      xpack.security.http.ssl.enabled: false
+      xpack.security.transport.ssl.enabled: false
+      network.host: 0.0.0.0
+      discovery.type: single-node
+  notify: restart elasticsearch
+
+- name: "elasticsearch | Limiter la JVM à 512m (lab)"
+  ansible.builtin.copy:
+    dest: /etc/elasticsearch/jvm.options.d/lab.options
+    mode: "0644"
+    content: |
+      -Xms512m
+      -Xmx512m
+  notify: restart elasticsearch
+
+- name: "elasticsearch | Activer et démarrer"
+  ansible.builtin.systemd:
+    name: elasticsearch
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: "elasticsearch | Attendre le port 9200 (démarrage lent)"
+  ansible.builtin.wait_for:
+    port: 9200
+    timeout: 120

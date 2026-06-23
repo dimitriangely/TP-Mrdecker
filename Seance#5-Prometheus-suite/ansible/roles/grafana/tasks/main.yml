@@ -1,0 +1,55 @@
+---
+- name: "grafana | Installer les dépendances"
+  ansible.builtin.apt:
+    name: [apt-transport-https, software-properties-common, wget, gnupg2]
+    state: present
+    update_cache: true
+
+- name: "grafana | Créer le répertoire keyrings"
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: "grafana | Ajouter la clé GPG"
+  ansible.builtin.shell:
+    cmd: |
+      wget -q -O - https://apt.grafana.com/gpg.key | \
+      gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
+    creates: /etc/apt/keyrings/grafana.gpg
+
+- name: "grafana | Ajouter le dépôt"
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+    state: present
+    filename: grafana
+
+- name: "grafana | Installer grafana"
+  ansible.builtin.apt:
+    name: grafana
+    state: present
+    update_cache: true
+
+- name: "grafana | Configurer admin et port"
+  ansible.builtin.lineinfile:
+    path: /etc/grafana/grafana.ini
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backrefs: true
+  loop:
+    - { regexp: '^;?admin_user\s*=',     line: "admin_user = {{ grafana_admin_user }}" }
+    - { regexp: '^;?admin_password\s*=', line: "admin_password = {{ grafana_admin_password }}" }
+    - { regexp: '^;?http_port\s*=',      line: "http_port = {{ grafana_port }}" }
+  notify: restart grafana
+
+- name: "grafana | Activer et démarrer"
+  ansible.builtin.systemd:
+    name: grafana-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: "grafana | Attendre le port {{ grafana_port }}"
+  ansible.builtin.wait_for:
+    port: "{{ grafana_port }}"
+    timeout: 30

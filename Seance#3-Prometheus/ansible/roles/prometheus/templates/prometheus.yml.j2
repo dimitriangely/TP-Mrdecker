@@ -1,0 +1,39 @@
+# /etc/prometheus/prometheus.yml
+# Généré par Ansible — ne pas modifier manuellement
+
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  scrape_timeout:      10s
+
+# ── Fichiers de règles d'alerte ───────────────────────────────────────────────
+rule_files:
+  - /etc/prometheus/alert.rules.yml
+
+# ── Envoi des alertes vers Alertmanager ───────────────────────────────────────
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - localhost:9093
+
+# ── Scrape configs ────────────────────────────────────────────────────────────
+scrape_configs:
+
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:{{ prometheus_port }}"]
+
+{% for job in prometheus_scrape_targets %}
+  - job_name: "{{ job.job_name }}"
+    static_configs:
+      - targets:
+{% for target in job.targets %}
+          - "{{ target }}"
+{% endfor %}
+
+{% endfor %}
+
+  - job_name: "flask-api"
+    static_configs:
+      - targets: ["localhost:5000"]

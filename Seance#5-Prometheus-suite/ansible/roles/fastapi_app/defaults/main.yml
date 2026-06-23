@@ -1,0 +1,5 @@
+---
+fastapi_port: 5000
+fastapi_dir: /opt/fastapi_app
+fastapi_user: fastapi
+fastapi_log: /var/log/api-fastapi.log

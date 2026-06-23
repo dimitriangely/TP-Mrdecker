@@ -1,0 +1,73 @@
+---
+# roles/grafana/tasks/main.yml
+# Grafana s'installe via son dépôt APT officiel.
+
+# ── 1. Dépendances APT ────────────────────────────────────────────────────────
+- name: "grafana | Installer les dépendances APT"
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - software-properties-common
+      - wget
+      - gnupg2
+    state: present
+    update_cache: true
+
+# ── 2. Clé GPG du dépôt Grafana ───────────────────────────────────────────────
+- name: "grafana | Ajouter la clé GPG officielle"
+  ansible.builtin.shell:
+    cmd: |
+      wget -q -O - https://apt.grafana.com/gpg.key | \
+      gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
+    creates: /etc/apt/keyrings/grafana.gpg
+  # creates : idempotent — ne relance pas si la clé existe déjà.
+
+- name: "grafana | Créer le répertoire keyrings si absent"
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+# ── 3. Ajouter le dépôt APT ──────────────────────────────────────────────────
+- name: "grafana | Ajouter le dépôt stable"
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+    state: present
+    filename: grafana
+
+# ── 4. Installer Grafana ──────────────────────────────────────────────────────
+- name: "grafana | Installer grafana"
+  ansible.builtin.apt:
+    name: grafana
+    state: present
+    update_cache: true
+
+# ── 5. Configurer admin et port ───────────────────────────────────────────────
+- name: "grafana | Configurer admin_user et admin_password"
+  ansible.builtin.lineinfile:
+    path: /etc/grafana/grafana.ini
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backrefs: true
+  loop:
+    - { regexp: '^;?admin_user\s*=', line: "admin_user = {{ grafana_admin_user }}" }
+    - { regexp: '^;?admin_password\s*=', line: "admin_password = {{ grafana_admin_password }}" }
+    - { regexp: '^;?http_port\s*=', line: "http_port = {{ grafana_port }}" }
+  notify: restart grafana
+  # lineinfile : modifie une ligne en place sans réécrire tout le fichier.
+  # backrefs : la substitution ne se fait que si le regexp matche.
+
+# ── 6. Activer et démarrer ────────────────────────────────────────────────────
+- name: "grafana | Activer et démarrer grafana-server"
+  ansible.builtin.systemd:
+    name: grafana-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# ── 7. Vérification ───────────────────────────────────────────────────────────
+- name: "grafana | Attendre que l'UI soit disponible sur :{{ grafana_port }}"
+  ansible.builtin.wait_for:
+    port: "{{ grafana_port }}"
+    timeout: 30
+
