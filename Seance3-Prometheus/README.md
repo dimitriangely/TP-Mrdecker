@@ -40,7 +40,7 @@ chez les exporters toutes les 15 secondes. Les cibles n'envoient rien elles-mêm
 
 ```powershell
 # 1. Se placer dans le répertoire
-cd tp-observabilite
+cd Seance3-Prometheus
 
 # 2. Démarrer les deux VMs (long au premier lancement : téléchargement box + provisioning)
 vagrant up

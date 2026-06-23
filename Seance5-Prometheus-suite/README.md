@@ -38,7 +38,7 @@
 ## Démarrage
 
 ```powershell
-cd tp-elk
+cd Seance5-Prometheus-suite
 
 # Démarrer les deux VMs
 vagrant up
