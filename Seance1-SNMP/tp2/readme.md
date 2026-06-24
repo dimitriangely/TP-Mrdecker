@@ -264,7 +264,7 @@ view systemonly included .1.3.6.1.2.1.25
 view systemonly included .1.3.6.1.4.1.2021
 ```
 
-### hrProcessorLoad non disponible sur Ubuntu 20.04
+### hrProcessorLoad non disponible sur Ubuntu 22.04
 
 `hrProcessorLoad` (`1.3.6.1.2.1.25.3.3.1.2`) n'est pas exposé par le paquet `snmpd` d'Ubuntu sans modules additionnels. Le contournement standard est UCD-SNMP-MIB qui lit directement `/proc/loadavg`.
 

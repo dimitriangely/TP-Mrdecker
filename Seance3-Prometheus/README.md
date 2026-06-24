@@ -172,7 +172,7 @@ sudo stress-ng --cpu 2 --timeout 180s &
 ## Structure du projet
 
 ```
-tp-observabilite/
+Seance3-Prometheus/
 ├── Vagrantfile
 ├── app/
 │   ├── app.py                  # API Flask instrumentée (Counter + Histogram)

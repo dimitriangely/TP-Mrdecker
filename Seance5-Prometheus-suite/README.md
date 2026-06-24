@@ -257,7 +257,7 @@ Une durée de 3s incrémente les buckets `le="5.0"` et `le="+Inf"`, ainsi que `_
 ## Structure du projet
 
 ```
-tp-elk/
+Seance5-Prometheus-suite/
 ├── Vagrantfile
 ├── app/
 │   ├── app.py                  ← FastAPI + middleware Prometheus

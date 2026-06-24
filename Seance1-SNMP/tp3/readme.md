@@ -293,13 +293,13 @@ Résultats obtenus :
 
 ## Scénario 2 — Trap coldStart (redémarrage)
 
-Sur le manager, surveille les traps en temps réel :
+Sur le manager, surveillez les traps en temps réel :
 
 ```bash
 sudo tail -f /var/log/snmptrapd.log
 ```
 
-Depuis Windows, redémarre l'agent :
+Depuis Windows, redémarrez l'agent :
 
 ```powershell
 vagrant reload agent
