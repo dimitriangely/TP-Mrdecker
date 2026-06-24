@@ -1,0 +1,33 @@
+Vagrant.configure("2") do |config|
+
+    config.vm.define "manager" do |manager|
+      manager.vm.box = "ubuntu/focal64"
+      manager.vm.hostname = "snmp-manager"
+      manager.vm.network "private_network", ip: "192.168.56.10"
+  
+      manager.vm.provider "virtualbox" do |vb|
+        vb.name = "SNMP-Manager-V3"
+        vb.memory = 1024
+      end
+  
+      manager.vm.provision "ansible_local" do |ansible|
+        ansible.playbook = "playbook_manager.yml"
+      end
+    end
+  
+    config.vm.define "agent" do |agent|
+      agent.vm.box = "ubuntu/focal64"
+      agent.vm.hostname = "snmp-agent"
+      agent.vm.network "private_network", ip: "192.168.56.20"
+  
+      agent.vm.provider "virtualbox" do |vb|
+        vb.name = "SNMP-Agent-V3"
+        vb.memory = 1024
+      end
+  
+      agent.vm.provision "ansible_local" do |ansible|
+        ansible.playbook = "playbook_agent.yml"
+      end
+    end
+  
+  end

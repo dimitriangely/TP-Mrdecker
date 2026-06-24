@@ -1,0 +1,42 @@
+---
+- hosts: all
+  become: true
+  tasks:
+    - name: Installer snmpd et client snmp
+      apt:
+        name:
+          - snmpd
+          - snmp
+        state: present
+        update_cache: yes
+
+    - name: Configurer la communauté public
+      lineinfile:
+        path: /etc/snmp/snmpd.conf
+        regexp: '^rocommunity'
+        line: 'rocommunity public 192.168.56.0/24'
+        backup: yes
+
+    - name: Supprimer toute directive agentAddress existante
+      lineinfile:
+        path: /etc/snmp/snmpd.conf
+        regexp: '^[aA]gent[aA]ddress'
+        state: absent
+
+    - name: Ajouter agentAddress correct
+      lineinfile:
+        path: /etc/snmp/snmpd.conf
+        line: 'agentAddress udp:0.0.0.0:161'
+        
+
+    - name: Démarrer et activer snmpd
+      service:
+        name: snmpd
+        state: restarted
+        enabled: yes
+
+    - name: Ouvrir le port 161 UFW
+      ufw:
+        rule: allow
+        port: '161'
+        proto: udp

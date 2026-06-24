@@ -1,0 +1,69 @@
+---
+- hosts: all
+  become: true
+  tasks:
+
+    - name: Installer snmp, snmptrapd et snmp-mibs-downloader
+      apt:
+        name:
+          - snmp
+          - snmptrapd
+          - snmp-mibs-downloader
+        state: present
+        update_cache: yes
+
+    - name: Télécharger les MIBs standard
+      command: download-mibs
+      args:
+        creates: /usr/share/snmp/mibs/ietf/IF-MIB
+
+    - name: Activer toutes les MIBs
+      lineinfile:
+        path: /etc/snmp/snmp.conf
+        regexp: '^mibs'
+        line: 'mibs +ALL'
+        create: yes
+
+    - name: Créer le fichier de log pour les traps
+      file:
+        path: /var/log/snmptrapd.log
+        state: touch
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Configurer snmptrapd
+      copy:
+        dest: /etc/snmp/snmptrapd.conf
+        content: |
+          authCommunity log,execute,net supervision
+
+    - name: Créer le répertoire override systemd
+      file:
+        path: /etc/systemd/system/snmptrapd.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Override systemd snmptrapd pour logger dans un fichier
+      copy:
+        dest: /etc/systemd/system/snmptrapd.service.d/override.conf
+        content: |
+          [Service]
+          ExecStart=
+          ExecStart=/usr/sbin/snmptrapd -Lf /var/log/snmptrapd.log -f -p /run/snmptrapd.pid
+
+    - name: Recharger systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Démarrer et activer snmptrapd
+      service:
+        name: snmptrapd
+        state: restarted
+        enabled: yes
+
+    - name: Ouvrir le port 162 UDP
+      ufw:
+        rule: allow
+        port: '162'
+        proto: udp
