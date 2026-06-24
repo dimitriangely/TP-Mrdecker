@@ -235,3 +235,5 @@ Utiliser deux tasks distinctes — supprimer avant d'insérer — avec un regexp
 - SNMP v2c — protocole de supervision réseau, MIB, OID, communauté
 - Debug méthodique — `systemctl`, `journalctl`, `ss`, `grep` pour isoler la cause racine
 - iReasoning MIB Browser — exploration graphique d'une MIB depuis Windows
+
+![iReasoning MIB Browser - sysName et sysUpTime](screenshots/ireasoning-sysname-sysuptime.jpg)
