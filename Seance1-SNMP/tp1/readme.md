@@ -35,7 +35,7 @@ Déployer un agent SNMP sur une VM Linux via Infrastructure as Code (Vagrant + A
 ## Structure du projet
 
 ```
-Seance1-SNMP/
+tp1/
 ├── Vagrantfile
 └── playbook.yml
 ```
