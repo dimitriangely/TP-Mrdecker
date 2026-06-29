@@ -1,0 +1,133 @@
+---
+# =============================================================================
+# Rôle : influxdb_data — Ingestion, stress test et downsampling
+# Exercices 2, 4, 8
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Lire le token InfluxDB
+# -----------------------------------------------------------------------------
+- name: "Lire le token admin InfluxDB"
+  ansible.builtin.slurp:
+    src: /etc/influxdb3/admin_token.txt
+  register: data_token_raw
+  tags: influxdb_data_token
+
+- name: "Définir le token"
+  ansible.builtin.set_fact:
+    influxdb_admin_token: "{{ data_token_raw.content | b64decode | trim }}"
+  tags: influxdb_data_token
+
+# -----------------------------------------------------------------------------
+# 2. Installer le client Python influxdb3
+#    Exercice 4 — prérequis pour stress_test.py et downsample.py
+# -----------------------------------------------------------------------------
+- name: "Installer python3-pip"
+  ansible.builtin.apt:
+    name: python3-pip
+    state: present
+    update_cache: true
+  tags: influxdb_data_python
+
+- name: "Installer le client Python influxdb3-python"
+  ansible.builtin.shell: |
+    pip3 install influxdb3-python
+  args:
+    executable: /bin/bash
+  changed_when: true
+  tags: influxdb_data_python
+
+# -----------------------------------------------------------------------------
+# 3. Déployer les fichiers de données et scripts
+# -----------------------------------------------------------------------------
+- name: "Déployer data_input.txt (exercice 2)"
+  ansible.builtin.copy:
+    src: data_input.txt
+    dest: /home/vagrant/data_input.txt
+    owner: vagrant
+    group: vagrant
+    mode: "0644"
+  tags: influxdb_data_files
+
+- name: "Déployer stress_test.py (exercice 4)"
+  ansible.builtin.copy:
+    src: stress_test.py
+    dest: /home/vagrant/stress_test.py
+    owner: vagrant
+    group: vagrant
+    mode: "0755"
+  tags: influxdb_data_files
+
+- name: "Déployer downsample.py (exercice 8)"
+  ansible.builtin.copy:
+    src: downsample.py
+    dest: /home/vagrant/downsample.py
+    owner: vagrant
+    group: vagrant
+    mode: "0755"
+  tags: influxdb_data_files
+
+# -----------------------------------------------------------------------------
+# 4. Injecter data_input.txt via curl (exercice 2)
+# -----------------------------------------------------------------------------
+- name: "Injecter data_input.txt dans usine_analytics"
+  ansible.builtin.shell: |
+    curl -sf -XPOST \
+      "http://127.0.0.1:{{ influxdb_port }}/api/v3/write_lp?db={{ influxdb_db_name }}" \
+      -H "Authorization: Bearer {{ influxdb_admin_token }}" \
+      --data-binary @/home/vagrant/data_input.txt
+  changed_when: true
+  tags: influxdb_data_inject
+
+- name: "Vérifier l'ingestion — compter les lignes injectées"
+  ansible.builtin.shell: |
+    influxdb3 query \
+      --token {{ influxdb_admin_token }} \
+      --host http://127.0.0.1:{{ influxdb_port }} \
+      --database {{ influxdb_db_name }} \
+      "SELECT COUNT(*) FROM flux_production"
+  register: injection_count
+  changed_when: false
+  tags: influxdb_data_inject
+
+- name: "Afficher le résultat de l'ingestion"
+  ansible.builtin.debug:
+    msg: "{{ injection_count.stdout_lines }}"
+  tags: influxdb_data_inject
+
+# -----------------------------------------------------------------------------
+# 5. Configurer le cron pour le downsampling (exercice 8)
+# -----------------------------------------------------------------------------
+- name: "Configurer le cron downsample.py — toutes les heures"
+  ansible.builtin.cron:
+    name: "InfluxDB downsampling horaire"
+    minute: "0"
+    hour: "*"
+    job: "/usr/bin/python3 /home/vagrant/downsample.py >> /var/log/influxdb_downsample.log 2>&1"
+    user: vagrant
+    state: present
+  tags: influxdb_data_cron
+
+- name: "Créer le fichier de log pour le downsampling"
+  ansible.builtin.file:
+    path: /var/log/influxdb_downsample.log
+    state: touch
+    owner: vagrant
+    group: vagrant
+    mode: "0644"
+  changed_when: false
+  tags: influxdb_data_cron
+
+# -----------------------------------------------------------------------------
+# 6. Vérification finale — afficher les instructions pour l'exercice 4
+# -----------------------------------------------------------------------------
+- name: "Afficher les instructions pour le stress test"
+  ansible.builtin.debug:
+    msg:
+      - "========================================"
+      - "Stress test prêt — exercice 4"
+      - "Depuis la VM : python3 /home/vagrant/stress_test.py &"
+      - "Surveiller RAM : htop"
+      - "Fichiers Parquet : ls /var/lib/influxdb3/influxdb-lab-node/"
+      - "========================================"
+  tags: influxdb_data_verify

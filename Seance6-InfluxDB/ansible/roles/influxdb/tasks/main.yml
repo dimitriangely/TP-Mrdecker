@@ -1,0 +1,265 @@
+---
+# =============================================================================
+# Rôle : influxdb — Installation InfluxDB v3 Core
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Dépendances système
+# -----------------------------------------------------------------------------
+- name: "Installer les dépendances système"
+  ansible.builtin.apt:
+    name:
+      - curl
+      - wget
+      - tar
+      - gnupg2
+      - ca-certificates
+      - software-properties-common
+    state: present
+    update_cache: true
+  tags: influxdb_deps
+
+# -----------------------------------------------------------------------------
+# 2. Installer libpython3.13 (requis par le binaire InfluxDB v3 Core 3.9.x)
+# -----------------------------------------------------------------------------
+- name: "Ajouter le PPA deadsnakes pour libpython3.13"
+  ansible.builtin.apt_repository:
+    repo: "ppa:deadsnakes/ppa"
+    state: present
+    update_cache: true
+  tags: influxdb_deps
+
+- name: "Installer libpython3.13"
+  ansible.builtin.apt:
+    name:
+      - libpython3.13
+    state: present
+    update_cache: true
+  tags: influxdb_deps
+
+# -----------------------------------------------------------------------------
+# 3. Créer l'utilisateur système influxdb3
+# -----------------------------------------------------------------------------
+- name: "Créer le groupe influxdb3"
+  ansible.builtin.group:
+    name: influxdb3
+    system: true
+    state: present
+  tags: influxdb_user
+
+- name: "Créer l'utilisateur système influxdb3"
+  ansible.builtin.user:
+    name: influxdb3
+    group: influxdb3
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ influxdb_data_dir }}"
+    create_home: false
+    state: present
+  tags: influxdb_user
+
+# -----------------------------------------------------------------------------
+# 4. Créer les répertoires
+# -----------------------------------------------------------------------------
+- name: "Créer le répertoire de données"
+  ansible.builtin.file:
+    path: "{{ influxdb_data_dir }}"
+    state: directory
+    owner: influxdb3
+    group: influxdb3
+    mode: "0750"
+  tags: influxdb_dirs
+
+- name: "Créer le répertoire de configuration"
+  ansible.builtin.file:
+    path: "{{ influxdb_config_dir }}"
+    state: directory
+    owner: influxdb3
+    group: influxdb3
+    mode: "0750"
+  tags: influxdb_dirs
+
+# -----------------------------------------------------------------------------
+# 5. Télécharger et installer le binaire InfluxDB v3 Core
+# -----------------------------------------------------------------------------
+- name: "Télécharger l'archive InfluxDB v3 Core {{ influxdb_version }}"
+  ansible.builtin.get_url:
+    url: "https://dl.influxdata.com/influxdb/releases/influxdb3-core-{{ influxdb_version }}_linux_amd64.tar.gz"
+    dest: "/tmp/influxdb3-core.tar.gz"
+    mode: "0644"
+    timeout: 120
+  tags: influxdb_install
+
+- name: "Créer le répertoire d'extraction"
+  ansible.builtin.file:
+    path: "/tmp/influxdb3-extract"
+    state: directory
+    mode: "0755"
+  tags: influxdb_install
+
+- name: "Extraire l'archive dans /tmp/influxdb3-extract"
+  ansible.builtin.unarchive:
+    src: "/tmp/influxdb3-core.tar.gz"
+    dest: "/tmp/influxdb3-extract"
+    remote_src: true
+  tags: influxdb_install
+
+- name: "Trouver le binaire influxdb3 dans l'archive extraite"
+  ansible.builtin.find:
+    paths: "/tmp/influxdb3-extract"
+    patterns: "influxdb3"
+    file_type: file
+    recurse: true
+  register: influxdb_binary_found
+  tags: influxdb_install
+
+- name: "Vérifier que le binaire a été trouvé"
+  ansible.builtin.fail:
+    msg: "Binaire influxdb3 introuvable — contenu : {{ influxdb_binary_found.files }}"
+  when: influxdb_binary_found.files | length == 0
+  tags: influxdb_install
+
+- name: "Installer le binaire dans {{ influxdb_install_dir }}"
+  ansible.builtin.copy:
+    src: "{{ influxdb_binary_found.files[0].path }}"
+    dest: "{{ influxdb_install_dir }}/influxdb3"
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+  tags: influxdb_install
+  notify: restart influxdb3
+
+# -----------------------------------------------------------------------------
+# 6. Déployer le service systemd
+# -----------------------------------------------------------------------------
+- name: "Déployer le service systemd influxdb3"
+  ansible.builtin.template:
+    src: influxdb3.service.j2
+    dest: /etc/systemd/system/influxdb3.service
+    owner: root
+    group: root
+    mode: "0644"
+  tags: influxdb_service
+  notify:
+    - reload systemd
+    - restart influxdb3
+
+# -----------------------------------------------------------------------------
+# 7. Démarrer et activer le service
+# -----------------------------------------------------------------------------
+- name: "Activer et démarrer influxdb3"
+  ansible.builtin.systemd:
+    name: influxdb3
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: influxdb_service
+
+# -----------------------------------------------------------------------------
+# 8. Attendre que l'API soit disponible
+# -----------------------------------------------------------------------------
+- name: "Attendre que l'API HTTP réponde sur le port {{ influxdb_port }}"
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ influxdb_port }}"
+    delay: 3
+    timeout: 60
+  tags: influxdb_verify
+
+# -----------------------------------------------------------------------------
+# 9. Générer le token admin (idempotent)
+#    Le token est sur stdout — on le capture dans une variable shell
+#    puis on l'écrit dans le fichier en une seule opération atomique
+# -----------------------------------------------------------------------------
+- name: "Générer le token admin et le sauvegarder"
+  ansible.builtin.shell: |
+    OUTPUT=$(influxdb3 create token --admin \
+      --host http://127.0.0.1:{{ influxdb_port }})
+    # Stripper les codes ANSI (couleurs terminal) avant le grep
+    TOKEN=$(echo "$OUTPUT" | \
+      sed 's/\x1b\[[0-9;]*m//g' | \
+      grep "^Token:" | \
+      awk '{print $2}')
+    if [ -z "$TOKEN" ]; then
+      echo "ERREUR: token vide. Sortie: $OUTPUT" >&2
+      exit 1
+    fi
+    echo "$TOKEN" > /etc/influxdb3/admin_token.txt
+    chmod 640 /etc/influxdb3/admin_token.txt
+    chown influxdb3:influxdb3 /etc/influxdb3/admin_token.txt
+  args:
+    executable: /bin/bash
+    creates: /etc/influxdb3/admin_token.txt
+  tags: influxdb_token
+
+- name: "Lire le token admin"
+  ansible.builtin.slurp:
+    src: /etc/influxdb3/admin_token.txt
+  register: token_slurp
+  tags: influxdb_token
+
+- name: "Définir la variable influxdb_admin_token"
+  ansible.builtin.set_fact:
+    influxdb_admin_token: "{{ token_slurp.content | b64decode | trim }}"
+  tags: influxdb_token
+
+- name: "Afficher le token (à noter)"
+  ansible.builtin.debug:
+    msg: "Token admin InfluxDB : {{ influxdb_admin_token }}"
+  tags: influxdb_token
+
+# -----------------------------------------------------------------------------
+# 10. Créer les bases de données via la CLI
+# -----------------------------------------------------------------------------
+- name: "Créer la database {{ influxdb_db_name }}"
+  ansible.builtin.shell: |
+    influxdb3 create database {{ influxdb_db_name }} \
+      --token {{ influxdb_admin_token }} \
+      --host http://127.0.0.1:{{ influxdb_port }}
+  register: db_create
+  changed_when: "'created successfully' in db_create.stdout"
+  failed_when:
+    - db_create.rc != 0
+    - "'already exists' not in db_create.stderr"
+  tags: influxdb_db
+
+- name: "Créer la database {{ influxdb_db_historique }}"
+  ansible.builtin.shell: |
+    influxdb3 create database {{ influxdb_db_historique }} \
+      --token {{ influxdb_admin_token }} \
+      --host http://127.0.0.1:{{ influxdb_port }}
+  register: db_hist_create
+  changed_when: "'created successfully' in db_hist_create.stdout"
+  failed_when:
+    - db_hist_create.rc != 0
+    - "'already exists' not in db_hist_create.stderr"
+  tags: influxdb_db
+
+# -----------------------------------------------------------------------------
+# 11. Vérification finale
+# -----------------------------------------------------------------------------
+- name: "Lister les databases"
+  ansible.builtin.shell: |
+    influxdb3 show databases \
+      --token {{ influxdb_admin_token }} \
+      --host http://127.0.0.1:{{ influxdb_port }}
+  register: db_list
+  changed_when: false
+  tags: influxdb_verify
+
+- name: "Afficher les databases"
+  ansible.builtin.debug:
+    msg: "{{ db_list.stdout_lines }}"
+  tags: influxdb_verify
+
+- name: "Vérifier le statut du service influxdb3"
+  ansible.builtin.command: systemctl is-active influxdb3
+  register: influxdb_status
+  changed_when: false
+  tags: influxdb_verify
+
+- name: "Afficher le statut"
+  ansible.builtin.debug:
+    msg: "InfluxDB v3 est {{ influxdb_status.stdout }}"
+  tags: influxdb_verify

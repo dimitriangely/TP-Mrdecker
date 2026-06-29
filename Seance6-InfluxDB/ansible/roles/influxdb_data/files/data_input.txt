@@ -1,0 +1,5 @@
+flux_production,ligne_id=L1,operateur=Alice vitesse=120i,temperature=72.4,erreur_critique=f
+flux_production,ligne_id=L1,operateur=Alice vitesse=118i,temperature=73.1,erreur_critique=f
+flux_production,ligne_id=L2,operateur=Bob vitesse=95i,temperature=68.9,erreur_critique=f
+flux_production,ligne_id=L2,operateur=Bob vitesse=0i,temperature=85.2,erreur_critique=t
+flux_production,ligne_id=L3,operateur=Charlie vitesse=110i,temperature=71.0,erreur_critique=f

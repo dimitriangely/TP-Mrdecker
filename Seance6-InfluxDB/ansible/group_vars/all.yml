@@ -1,0 +1,24 @@
+---
+# =============================================================================
+# Variables globales — TP InfluxDB v3
+# =============================================================================
+
+# --- InfluxDB v3 ---
+influxdb_version:        "latest"
+influxdb_bind_address:   "0.0.0.0"
+influxdb_port:           8086
+influxdb_data_dir:       "/var/lib/influxdb3"
+influxdb_config_dir:     "/etc/influxdb3"
+influxdb_db_name:        "usine_analytics"
+influxdb_db_historique:  "usine_historique_5ans"
+
+# Token généré après installation — à renseigner après l'exercice 1
+influxdb_token:          "REMPLACER_APRES_GENERATION"
+
+# --- Grafana ---
+grafana_port:            3000
+grafana_admin_user:      "admin"
+grafana_admin_password:  "admin"
+
+# --- Python ---
+influxdb_python_client:  "influxdb3-python"

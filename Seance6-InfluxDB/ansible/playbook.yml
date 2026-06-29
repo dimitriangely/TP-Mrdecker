@@ -1,0 +1,8 @@
+---
+# =============================================================================
+# Master playbook — TP InfluxDB v3
+# Appelé par Vagrant ansible_local
+# =============================================================================
+- import_playbook: playbooks/01_influxdb.yml
+- import_playbook: playbooks/02_grafana.yml
+- import_playbook: playbooks/03_data.yml

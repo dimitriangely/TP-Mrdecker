@@ -1,0 +1,25 @@
+[Unit]
+Description=InfluxDB v3 Core — Time Series Database
+Documentation=https://docs.influxdata.com/influxdb/v3/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=influxdb3
+Group=influxdb3
+ExecStart={{ influxdb_install_dir }}/influxdb3 serve \
+  --node-id={{ influxdb_node_id }} \
+  --object-store=file \
+  --data-dir={{ influxdb_data_dir }} \
+  --http-bind={{ influxdb_bind_address }}:{{ influxdb_port }}
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+
+# Sécurité
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

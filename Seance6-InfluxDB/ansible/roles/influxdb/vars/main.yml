@@ -1,0 +1,13 @@
+---
+# =============================================================================
+# Variables spécifiques au rôle influxdb
+# =============================================================================
+
+# Version courante d'InfluxDB v3 Core
+influxdb_version:     "3.9.3"
+
+# Répertoire d'installation du binaire
+influxdb_install_dir: "/usr/local/bin"
+
+# Identifiant unique du nœud (requis depuis v3.x)
+influxdb_node_id:     "influxdb-lab-node"

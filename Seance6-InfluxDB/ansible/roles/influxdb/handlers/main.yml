@@ -1,0 +1,13 @@
+---
+# =============================================================================
+# Handlers : influxdb
+# =============================================================================
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart influxdb3
+  ansible.builtin.systemd:
+    name: influxdb3
+    state: restarted

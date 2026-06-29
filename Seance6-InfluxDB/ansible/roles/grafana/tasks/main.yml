@@ -1,0 +1,116 @@
+---
+# =============================================================================
+# Rôle : grafana — Installation et configuration Grafana
+# Exercice 9
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Ajouter le dépôt officiel Grafana
+# -----------------------------------------------------------------------------
+- name: "Installer le prérequis apt-transport-https"
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - software-properties-common
+    state: present
+    update_cache: true
+  tags: grafana_deps
+
+- name: "Ajouter la clé GPG Grafana"
+  ansible.builtin.shell: |
+    wget -q -O /usr/share/keyrings/grafana.key \
+      https://apt.grafana.com/gpg.key
+  args:
+    creates: /usr/share/keyrings/grafana.key
+  tags: grafana_repo
+
+- name: "Ajouter le dépôt APT Grafana stable"
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main"
+    state: present
+    filename: grafana
+    update_cache: true
+  tags: grafana_repo
+
+# -----------------------------------------------------------------------------
+# 2. Installer Grafana
+# -----------------------------------------------------------------------------
+- name: "Installer grafana"
+  ansible.builtin.apt:
+    name: grafana
+    state: present
+    update_cache: true
+  tags: grafana_install
+  notify: restart grafana
+
+# -----------------------------------------------------------------------------
+# 3. Créer le répertoire de provisioning datasources
+# -----------------------------------------------------------------------------
+- name: "Créer le répertoire de provisioning datasources"
+  ansible.builtin.file:
+    path: /etc/grafana/provisioning/datasources
+    state: directory
+    owner: root
+    group: grafana
+    mode: "0750"
+  tags: grafana_config
+
+# -----------------------------------------------------------------------------
+# 4. Déployer la datasource InfluxDB v3 via provisioning
+# -----------------------------------------------------------------------------
+- name: "Lire le token InfluxDB admin"
+  ansible.builtin.slurp:
+    src: /etc/influxdb3/admin_token.txt
+  register: grafana_influx_token_raw
+  tags: grafana_config
+
+- name: "Définir le token InfluxDB pour Grafana"
+  ansible.builtin.set_fact:
+    grafana_influx_token: "{{ grafana_influx_token_raw.content | b64decode | trim }}"
+  tags: grafana_config
+
+- name: "Déployer la datasource InfluxDB v3 (Flight SQL)"
+  ansible.builtin.template:
+    src: influxdb-datasource.yml.j2
+    dest: /etc/grafana/provisioning/datasources/influxdb3.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  tags: grafana_config
+  notify: restart grafana
+
+# -----------------------------------------------------------------------------
+# 5. Activer et démarrer Grafana
+# -----------------------------------------------------------------------------
+- name: "Activer et démarrer grafana-server"
+  ansible.builtin.systemd:
+    name: grafana-server
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: grafana_service
+
+# -----------------------------------------------------------------------------
+# 6. Attendre que Grafana soit disponible
+# -----------------------------------------------------------------------------
+- name: "Attendre que Grafana réponde sur le port {{ grafana_port }}"
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ grafana_port }}"
+    delay: 3
+    timeout: 60
+  tags: grafana_verify
+
+# -----------------------------------------------------------------------------
+# 7. Vérification finale
+# -----------------------------------------------------------------------------
+- name: "Vérifier le statut de grafana-server"
+  ansible.builtin.command: systemctl is-active grafana-server
+  register: grafana_status
+  changed_when: false
+  tags: grafana_verify
+
+- name: "Afficher le statut Grafana"
+  ansible.builtin.debug:
+    msg: "Grafana est {{ grafana_status.stdout }} — accès : http://localhost:{{ grafana_port }}"
+  tags: grafana_verify

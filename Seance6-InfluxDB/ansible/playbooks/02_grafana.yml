@@ -1,0 +1,11 @@
+---
+# =============================================================================
+# Playbook 02 — Installation et configuration Grafana
+# Exercice 9
+# Usage : ansible-playbook playbooks/02_grafana.yml
+# =============================================================================
+- name: Installation Grafana
+  hosts: all
+  become: true
+  roles:
+    - grafana

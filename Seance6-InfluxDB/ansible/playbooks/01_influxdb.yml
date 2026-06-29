@@ -1,0 +1,11 @@
+---
+# =============================================================================
+# Playbook 01 — Installation et configuration InfluxDB v3
+# Exercices 1, 2, 3
+# Usage : ansible-playbook playbooks/01_influxdb.yml
+# =============================================================================
+- name: Installation InfluxDB v3
+  hosts: all
+  become: true
+  roles:
+    - influxdb

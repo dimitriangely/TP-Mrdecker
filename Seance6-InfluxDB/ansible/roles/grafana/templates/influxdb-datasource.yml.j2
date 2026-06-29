@@ -1,0 +1,20 @@
+# =============================================================================
+# Grafana — Provisioning datasource InfluxDB v3 Core
+# Protocole : Flight SQL (Apache Arrow)
+# =============================================================================
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB3-usine
+    type: influxdb
+    access: proxy
+    url: http://127.0.0.1:{{ influxdb_port }}
+    jsonData:
+      version: Flux
+      organization: ""
+      defaultBucket: "{{ influxdb_db_name }}"
+      tlsSkipVerify: true
+    secureJsonData:
+      token: "{{ grafana_influx_token }}"
+    isDefault: true
+    editable: true

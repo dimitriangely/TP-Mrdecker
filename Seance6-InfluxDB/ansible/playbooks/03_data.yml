@@ -1,0 +1,12 @@
+---
+# =============================================================================
+# Playbook 03 — Ingestion des données et stress test
+# Exercices 2, 4, 8
+# Usage : ansible-playbook playbooks/03_data.yml
+# =============================================================================
+- name: Ingestion et stress test
+  hosts: all
+  become: true
+  roles:
+    - influxdb_data
+    - downsampling
