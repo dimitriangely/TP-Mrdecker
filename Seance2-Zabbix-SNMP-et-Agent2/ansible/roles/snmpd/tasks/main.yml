@@ -1,0 +1,39 @@
+---
+# =============================================================================
+# Rôle : snmpd
+# Objectif : Installation et configuration de SNMPd sur les serveurs clients
+#   - Communauté : tp_admin
+#   - Accès autorisé : 192.168.56.10 (SRV-ZABBIX) uniquement
+#   - Exposition de l'OID racine .1 (arborescence complète)
+# =============================================================================
+
+- name: "SNMP | Installation de snmpd"
+  apt:
+    name:
+      - snmpd
+    state: present
+
+- name: "SNMP | Déploiement de la configuration snmpd.conf"
+  template:
+    src: snmpd.conf.j2
+    dest: /etc/snmp/snmpd.conf
+    owner: root
+    group: root
+    mode: "0640"
+  notify: restart snmpd
+
+- name: "SNMP | Démarrage et activation de snmpd"
+  systemd:
+    name: snmpd
+    state: started
+    enabled: true
+
+- name: "SNMP | Validation — snmpwalk local (communauté tp_admin)"
+  shell: snmpwalk -v2c -c {{ snmp_community }} 127.0.0.1 system.sysDescr.0
+  register: snmp_test
+  changed_when: false
+  failed_when: snmp_test.rc != 0
+
+- name: "SNMP | Résultat du test local"
+  debug:
+    msg: "{{ snmp_test.stdout }}"

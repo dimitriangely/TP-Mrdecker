@@ -1,0 +1,18 @@
+# =============================================================================
+# /etc/apache2/conf-available/server-status.conf
+# Géré par Ansible (rôle apache_web)
+# =============================================================================
+# Expose les métriques Apache2 via mod_status
+# Accessible UNIQUEMENT en local (127.0.0.1) pour Zabbix Agent 2
+# =============================================================================
+
+<Location "/server-status">
+    SetHandler server-status
+
+    # Accès restreint à localhost et à l'agent local
+    Require local
+    Require ip 127.0.0.1
+</Location>
+
+# Désactiver l'accès depuis l'extérieur pour les autres locations
+ExtendedStatus On

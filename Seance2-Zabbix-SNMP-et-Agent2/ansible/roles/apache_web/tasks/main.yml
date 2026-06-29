@@ -1,0 +1,50 @@
+---
+# =============================================================================
+# Rôle : apache_web
+# Objectif : Apache2 avec mod_status activé sur SRV-APACHE
+#   - mod_status expose les métriques Apache à l'Agent Zabbix
+#   - Accès à /server-status restreint à localhost uniquement
+# =============================================================================
+
+- name: "Apache | Installation d'Apache2"
+  apt:
+    name: apache2
+    state: present
+
+- name: "Apache | Activation du module status"
+  apache2_module:
+    name: status
+    state: present
+  notify: restart apache2
+
+- name: "Apache | Déploiement de la configuration mod_status"
+  template:
+    src: status.conf.j2
+    dest: /etc/apache2/conf-available/server-status.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart apache2
+
+- name: "Apache | Activation de la configuration server-status"
+  command: a2enconf server-status
+  args:
+    creates: /etc/apache2/conf-enabled/server-status.conf
+  notify: restart apache2
+
+- name: "Apache | Démarrage et activation"
+  systemd:
+    name: apache2
+    state: started
+    enabled: true
+
+- name: "Apache | Validation — /server-status?auto accessible en local"
+  uri:
+    url: "http://localhost/server-status?auto"
+    return_content: true
+  register: apache_status
+  failed_when: "'Total Accesses' not in apache_status.content"
+
+- name: "Apache | Résultat du test mod_status"
+  debug:
+    msg: "mod_status OK — {{ apache_status.content.split('\n')[0] }}"

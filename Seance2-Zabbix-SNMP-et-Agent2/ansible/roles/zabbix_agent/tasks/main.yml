@@ -1,0 +1,59 @@
+---
+# =============================================================================
+# Rôle : zabbix_agent
+# Objectif : Installation de Zabbix Agent 2 sur les serveurs clients
+#   - Mode passif : le serveur Zabbix interroge l'agent
+#   - Port 10050
+# =============================================================================
+
+- name: "Agent | Téléchargement du paquet de dépôt Zabbix"
+  get_url:
+    url: "https://repo.zabbix.com/zabbix/7.0/debian/pool/main/z/zabbix-release/zabbix-release_latest_7.0+debian{{ ansible_distribution_major_version }}_all.deb"
+    dest: /tmp/zabbix-release.deb
+    mode: "0644"
+
+- name: "Agent | Installation du paquet de dépôt"
+  apt:
+    deb: /tmp/zabbix-release.deb
+
+- name: "Agent | Mise à jour du cache APT"
+  apt:
+    update_cache: true
+
+- name: "Agent | Installation de zabbix-agent2"
+  apt:
+    name: zabbix-agent2
+    state: present
+
+- name: "Agent | Configuration — Server (passif)"
+  lineinfile:
+    path: /etc/zabbix/zabbix_agent2.conf
+    regexp: "^Server="
+    line: "Server={{ zabbix_server_ip }}"
+  notify: restart zabbix-agent2
+
+- name: "Agent | Configuration — ServerActive (actif désactivé)"
+  lineinfile:
+    path: /etc/zabbix/zabbix_agent2.conf
+    regexp: "^ServerActive="
+    line: "# ServerActive= (mode passif uniquement)"
+  notify: restart zabbix-agent2
+
+- name: "Agent | Configuration — Hostname (identifiant dans Zabbix)"
+  lineinfile:
+    path: /etc/zabbix/zabbix_agent2.conf
+    regexp: "^Hostname="
+    line: "Hostname={{ inventory_hostname }}"
+  notify: restart zabbix-agent2
+
+- name: "Agent | Démarrage et activation de zabbix-agent2"
+  systemd:
+    name: zabbix-agent2
+    state: started
+    enabled: true
+
+- name: "Agent | Vérification — port 10050 ouvert"
+  wait_for:
+    port: "{{ zabbix_agent_port }}"
+    host: 127.0.0.1
+    timeout: 15

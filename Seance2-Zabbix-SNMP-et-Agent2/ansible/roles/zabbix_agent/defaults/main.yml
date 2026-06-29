@@ -1,0 +1,4 @@
+---
+# IP du serveur Zabbix (mode passif : l'agent écoute, le serveur collecte)
+zabbix_server_ip: "192.168.56.10"
+zabbix_agent_port: 10050

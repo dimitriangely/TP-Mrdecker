@@ -1,0 +1,27 @@
+# =============================================================================
+# /etc/snmp/snmpd.conf — Géré par Ansible (rôle snmpd)
+# TP Zabbix 7.0 — Supervision Hybride
+# =============================================================================
+
+# Écoute sur toutes les interfaces (nécessaire pour les requêtes réseau)
+agentaddress udp:0.0.0.0:161
+
+# -----------------------------------------------------------------------------
+# Communauté SNMP v2c
+# Syntaxe : rocommunity <communauté> <source_autorisée> <OID_racine>
+# -----------------------------------------------------------------------------
+
+# Accès lecture seule pour le serveur Zabbix uniquement
+rocommunity {{ snmp_community }} {{ snmp_allowed_ip }}
+
+# Accès lecture seule en local (utile pour les tests depuis la VM elle-même)
+rocommunity {{ snmp_community }} 127.0.0.1
+
+# Exposition de l'arborescence complète à partir de l'OID racine .1
+view   systemview  included   .1
+
+# -----------------------------------------------------------------------------
+# Informations système (sysLocation, sysContact)
+# -----------------------------------------------------------------------------
+sysLocation    Salle TP - Infrastructure Cloud
+sysContact     admin@tp-zabbix.local

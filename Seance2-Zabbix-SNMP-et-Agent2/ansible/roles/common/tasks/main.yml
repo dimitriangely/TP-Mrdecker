@@ -1,0 +1,69 @@
+---
+# =============================================================================
+# Rôle : common
+# Objectif : Configuration de base commune à toutes les VMs
+#   - Mise à jour du système
+#   - Configuration /etc/hosts pour la résolution entre VMs
+#   - Installation des utilitaires de base
+# =============================================================================
+
+# Fix ansible.cfg world-writable : copie dans le home vagrant
+- name: "Ansible | Copie de ansible.cfg hors de /vagrant (world-writable)"
+  copy:
+    src: /vagrant/ansible.cfg
+    dest: /home/vagrant/ansible.cfg
+    owner: vagrant
+    group: vagrant
+    mode: "0600"
+    remote_src: true
+
+- name: "Mise à jour du cache APT"
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: "Mise à jour du système"
+  apt:
+    upgrade: dist
+
+# snmp-mibs-downloader est dans non-free-firmware — activation du dépôt
+- name: "APT | Activation des dépôts non-free et non-free-firmware"
+  lineinfile:
+    path: /etc/apt/sources.list
+    regexp: '^deb http://deb.debian.org/debian bookworm main$'
+    line: 'deb http://deb.debian.org/debian bookworm main non-free non-free-firmware'
+  register: apt_sources
+
+- name: "APT | Mise à jour du cache après activation non-free"
+  apt:
+    update_cache: true
+  when: apt_sources.changed
+
+- name: "Installation des utilitaires de base"
+  apt:
+    name:
+      - curl
+      - wget
+      - gnupg2
+      - ca-certificates
+      - lsb-release
+      - net-tools
+      - snmp
+      - snmp-mibs-downloader
+    state: present
+
+- name: "Configuration du fichier /etc/hosts"
+  blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} ANSIBLE MANAGED — TP Zabbix"
+    block: |
+      192.168.56.10   srv-zabbix
+      192.168.56.11   srv-apache
+      192.168.56.12   srv-nginx
+
+- name: "Activation des MIBs SNMP"
+  lineinfile:
+    path: /etc/snmp/snmp.conf
+    regexp: '^mibs\s*:'
+    line: 'mibs +'
+    create: true

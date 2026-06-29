@@ -1,0 +1,32 @@
+---
+# =============================================================================
+# TP Zabbix 7.0 LTS — Playbook principal
+# =============================================================================
+
+# --- SRV-ZABBIX : Serveur maître ---
+- name: "Configuration SRV-ZABBIX"
+  hosts: srv-zabbix
+  become: true
+  roles:
+    - common
+    - zabbix_server
+
+# --- SRV-APACHE : Serveur web 1 ---
+- name: "Configuration SRV-APACHE"
+  hosts: srv-apache
+  become: true
+  roles:
+    - common
+    - snmpd
+    - apache_web
+    - zabbix_agent
+
+# --- SRV-NGINX : Serveur web 2 ---
+- name: "Configuration SRV-NGINX"
+  hosts: srv-nginx
+  become: true
+  roles:
+    - common
+    - snmpd
+    - nginx_web
+    - zabbix_agent

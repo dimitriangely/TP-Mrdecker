@@ -1,0 +1,6 @@
+---
+# Communauté SNMP définie dans l'énoncé
+snmp_community: "tp_admin"
+
+# IP du serveur Zabbix autorisé à faire des requêtes SNMP
+snmp_allowed_ip: "192.168.56.10"

@@ -1,0 +1,188 @@
+---
+# =============================================================================
+# Rôle : zabbix_server
+# Ordre d'exécution :
+#   1. MariaDB (install → sécurisation → création BDD/user)
+#   2. Dépôt Zabbix (ajout manuel, sans script officiel)
+#   3. Composants Zabbix (server + frontend + apache-conf)
+#   4. Import du schéma SQL
+#   5. Configuration zabbix_server.conf
+#   6. Démarrage des services
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# ÉTAPE 1 — MariaDB
+# -----------------------------------------------------------------------------
+
+- name: "MariaDB | Installation"
+  apt:
+    name:
+      - mariadb-server
+      - mariadb-client
+      - python3-pymysql    # requis par le module mysql_db d'Ansible
+    state: present
+
+- name: "MariaDB | Démarrage et activation au boot"
+  systemd:
+    name: mariadb
+    state: started
+    enabled: true
+
+- name: "MariaDB | Suppression des utilisateurs anonymes"
+  mysql_user:
+    name: ""
+    host_all: true
+    state: absent
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: "MariaDB | Suppression de la base test"
+  mysql_db:
+    name: test
+    state: absent
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: "MariaDB | Création de la base zabbix (charset utf8mb4)"
+  mysql_db:
+    name: "{{ zabbix_db_name }}"
+    encoding: utf8mb4
+    collation: utf8mb4_bin
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: "MariaDB | Création de l'utilisateur zabbix"
+  mysql_user:
+    name: "{{ zabbix_db_user }}"
+    password: "{{ zabbix_db_password }}"
+    host: "{{ zabbix_db_host }}"
+    priv: "{{ zabbix_db_name }}.*:ALL"
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: "MariaDB | Activation de log_bin_trust_function_creators (requis par Zabbix)"
+  mysql_variables:
+    variable: log_bin_trust_function_creators
+    value: "1"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+# -----------------------------------------------------------------------------
+# ÉTAPE 2 — Dépôt Zabbix officiel (ajout manuel, sans script automatique)
+# -----------------------------------------------------------------------------
+
+- name: "Zabbix | Téléchargement du paquet de dépôt"
+  get_url:
+    url: "https://repo.zabbix.com/zabbix/{{ zabbix_server_version }}/debian/pool/main/z/zabbix-release/zabbix-release_latest_{{ zabbix_server_version }}+debian{{ ansible_distribution_major_version }}_all.deb"
+    dest: /tmp/zabbix-release.deb
+    mode: "0644"
+
+- name: "Zabbix | Installation du paquet de dépôt"
+  apt:
+    deb: /tmp/zabbix-release.deb
+
+- name: "Zabbix | Mise à jour du cache APT après ajout du dépôt"
+  apt:
+    update_cache: true
+
+# -----------------------------------------------------------------------------
+# ÉTAPE 3 — Installation des composants Zabbix
+# -----------------------------------------------------------------------------
+
+- name: "Zabbix | Installation des composants serveur"
+  apt:
+    name:
+      - zabbix-server-mysql
+      - zabbix-frontend-php
+      - zabbix-apache-conf
+      - zabbix-sql-scripts
+      - zabbix-agent          # agent local sur le serveur lui-même
+    state: present
+
+# -----------------------------------------------------------------------------
+# ÉTAPE 4 — Import du schéma SQL
+# -----------------------------------------------------------------------------
+
+- name: "Zabbix | Vérification si le schéma SQL est déjà importé"
+  shell: |
+    mysql -u {{ zabbix_db_user }} -p'{{ zabbix_db_password }}' {{ zabbix_db_name }} \
+      -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ zabbix_db_name }}';" \
+      2>/dev/null | tail -1
+  register: table_count
+  changed_when: false
+  failed_when: false
+
+- name: "Zabbix | Import du schéma SQL (server.sql.gz)"
+  shell: |
+    zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | \
+    mysql --default-character-set=utf8mb4 \
+          -u {{ zabbix_db_user }} -p'{{ zabbix_db_password }}' {{ zabbix_db_name }}
+  when: table_count.stdout | int < 10
+  # On n'importe que si la base est (quasi) vide — idempotence manuelle
+
+- name: "MariaDB | Désactivation de log_bin_trust_function_creators après import"
+  mysql_variables:
+    variable: log_bin_trust_function_creators
+    value: "0"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+# -----------------------------------------------------------------------------
+# ÉTAPE 5 — Configuration de zabbix_server.conf
+# -----------------------------------------------------------------------------
+
+- name: "Zabbix | Configuration du DBPassword dans zabbix_server.conf"
+  lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: "^# DBPassword="
+    line: "DBPassword={{ zabbix_db_password }}"
+
+- name: "Zabbix | Configuration du DBHost"
+  lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: "^# DBHost=localhost"
+    line: "DBHost=localhost"
+
+- name: "Zabbix | Configuration du DBName"
+  lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: "^DBName=zabbix"
+    line: "DBName={{ zabbix_db_name }}"
+
+- name: "Zabbix | Configuration du DBUser"
+  lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: "^DBUser=zabbix"
+    line: "DBUser={{ zabbix_db_user }}"
+
+# -----------------------------------------------------------------------------
+# ÉTAPE 6 — Démarrage des services
+# -----------------------------------------------------------------------------
+
+- name: "Zabbix | Démarrage et activation de zabbix-server"
+  systemd:
+    name: zabbix-server
+    state: started
+    enabled: true
+
+- name: "Zabbix | Démarrage et activation de zabbix-agent"
+  systemd:
+    name: zabbix-agent
+    state: started
+    enabled: true
+
+- name: "Apache2 | Démarrage et activation"
+  systemd:
+    name: apache2
+    state: restarted
+    enabled: true
+
+- name: "Zabbix | Vérification — fichier de log (attendre 10s)"
+  wait_for:
+    path: /var/log/zabbix/zabbix_server.log
+    timeout: 30
+
+- name: "Zabbix | Affichage des dernières lignes du log"
+  shell: tail -20 /var/log/zabbix/zabbix_server.log
+  register: zabbix_log
+  changed_when: false
+
+- name: "Zabbix | Log serveur"
+  debug:
+    msg: "{{ zabbix_log.stdout_lines }}"

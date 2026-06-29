@@ -1,0 +1,36 @@
+---
+- name: "Nginx | Installation de Nginx"
+  apt:
+    name: nginx
+    state: present
+
+- name: "Nginx | Déploiement de la configuration nginx_status"
+  template:
+    src: nginx_status.conf.j2
+    dest: /etc/nginx/conf.d/stub_status.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart nginx
+
+- name: "Nginx | Démarrage et activation"
+  systemd:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: "Nginx | Forcer le rechargement de la config"
+  systemd:
+    name: nginx
+    state: reloaded
+
+- name: "Nginx | Validation — /nginx_status accessible en local (port 8081)"
+  uri:
+    url: "http://127.0.0.1:8081/nginx_status"
+    return_content: true
+  register: nginx_status
+  failed_when: "'Active connections' not in nginx_status.content"
+
+- name: "Nginx | Résultat du test stub_status"
+  debug:
+    msg: "stub_status OK — {{ nginx_status.content.split('\n')[0] }}"

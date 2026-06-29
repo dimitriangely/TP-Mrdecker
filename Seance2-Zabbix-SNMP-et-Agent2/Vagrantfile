@@ -1,0 +1,107 @@
+# =============================================================================
+# TP Zabbix 7.0 LTS — Supervision Hybride SNMP + Agent
+# Box     : debian/bookworm64 (Debian 12, fallback si Trixie indisponible)
+# RAM     : voir par VM ci-dessous
+# =============================================================================
+# NOTE : Debian 13 (Trixie) n'est pas encore disponible en box stable sur
+# Vagrant Cloud. On utilise debian/bookworm64 (Debian 12) qui est supportée
+# par le dépôt Zabbix 7.0. Remplacer par "debian/trixie64" dès disponibilité.
+# =============================================================================
+
+Vagrant.configure("2") do |config|
+
+  config.vm.box              = "debian/bookworm64"
+  config.vm.box_check_update = false
+
+  # ---------------------------------------------------------------------------
+  # SRV-ZABBIX — Serveur maître (MariaDB + Zabbix Server + Apache2 + PHP)
+  # ---------------------------------------------------------------------------
+  config.vm.define "srv-zabbix" do |zabbix|
+    zabbix.vm.hostname = "srv-zabbix"
+    zabbix.vm.network "private_network", ip: "192.168.56.10"
+
+    # Accès à l'interface web Zabbix depuis le navigateur hôte
+    zabbix.vm.network "forwarded_port", guest: 80, host: 8080
+
+    zabbix.vm.provider "virtualbox" do |vb|
+      vb.name         = "tp-zabbix-server"
+      vb.cpus         = 2
+      vb.memory       = 2048
+      vb.linked_clone = false
+    end
+
+    # Copie ansible.cfg hors du dossier world-writable /vagrant
+    zabbix.vm.provision "shell", inline: <<-SHELL
+      cp /vagrant/ansible.cfg /home/vagrant/ansible.cfg
+      chmod 600 /home/vagrant/ansible.cfg
+      chown vagrant:vagrant /home/vagrant/ansible.cfg
+    SHELL
+
+    zabbix.vm.provision "ansible_local" do |ansible|
+      ansible.playbook           = "ansible/playbook.yml"
+      ansible.provisioning_path  = "/vagrant"
+      ansible.install            = true
+      ansible.compatibility_mode = "2.0"
+      ansible.limit              = "srv-zabbix"
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # SRV-APACHE — Serveur web 1 (Apache2 + SNMPd + Zabbix Agent 2)
+  # ---------------------------------------------------------------------------
+  config.vm.define "srv-apache" do |apache|
+    apache.vm.hostname = "srv-apache"
+    apache.vm.network "private_network", ip: "192.168.56.11"
+
+    apache.vm.provider "virtualbox" do |vb|
+      vb.name         = "tp-zabbix-apache"
+      vb.cpus         = 1
+      vb.memory       = 1024
+      vb.linked_clone = true
+    end
+
+    apache.vm.provision "shell", inline: <<-SHELL
+      cp /vagrant/ansible.cfg /home/vagrant/ansible.cfg
+      chmod 600 /home/vagrant/ansible.cfg
+      chown vagrant:vagrant /home/vagrant/ansible.cfg
+    SHELL
+
+    apache.vm.provision "ansible_local" do |ansible|
+      ansible.playbook           = "ansible/playbook.yml"
+      ansible.provisioning_path  = "/vagrant"
+      ansible.install            = true
+      ansible.compatibility_mode = "2.0"
+      ansible.limit              = "srv-apache"
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # SRV-NGINX — Serveur web 2 (Nginx + SNMPd + Zabbix Agent 2)
+  # ---------------------------------------------------------------------------
+  config.vm.define "srv-nginx" do |nginx|
+    nginx.vm.hostname = "srv-nginx"
+    nginx.vm.network "private_network", ip: "192.168.56.12"
+
+    nginx.vm.provider "virtualbox" do |vb|
+      vb.name         = "tp-zabbix-nginx"
+      vb.cpus         = 1
+      vb.memory       = 1024
+      vb.linked_clone = true
+    end
+
+    nginx.vm.provision "shell", inline: <<-SHELL
+      cp /vagrant/ansible.cfg /home/vagrant/ansible.cfg
+      chmod 600 /home/vagrant/ansible.cfg
+      chown vagrant:vagrant /home/vagrant/ansible.cfg
+    SHELL
+
+    nginx.vm.provision "ansible_local" do |ansible|
+      ansible.playbook           = "ansible/playbook.yml"
+      ansible.provisioning_path  = "/vagrant"
+      ansible.install            = true
+      ansible.compatibility_mode = "2.0"
+      ansible.limit              = "srv-nginx"
+    end
+  end
+
+end
