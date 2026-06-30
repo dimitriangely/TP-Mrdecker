@@ -1,0 +1,99 @@
+{
+  "title": "M2-Shop - Observabilité Unifiée (Production)",
+  "uid": "m2shop-unified-prod",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
+  "tags": ["m2shop", "tp-observabilite-securisee"],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Requêtes par seconde (Nginx, web-prod)",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki_ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate({job=\"nginx_access\"}[1m]))",
+          "refId": "A",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Taux d'erreurs HTTP 4xx/5xx (Nginx, web-prod)",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki_ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate({job=\"nginx_access\"} |~ \"\\\" (4[0-9]{2}|5[0-9]{2}) \" [1m]))",
+          "refId": "A",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "fixed", "fixedColor": "red" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Utilisation CPU (web-prod, Node Exporter)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "1 - avg(rate(node_cpu_seconds_total{instance=\"10.0.20.20:9100\", mode=\"idle\"}[5m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "max": 1, "min": 0 },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Mémoire disponible (web-prod, Node Exporter)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "node_memory_MemAvailable_bytes{instance=\"10.0.20.20:9100\"} / node_memory_MemTotal_bytes{instance=\"10.0.20.20:9100\"}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "max": 1, "min": 0 },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Logs bruts Nginx (access + error)",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki_ds" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "{job=~\"nginx_access|nginx_error\"}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+# prometheus.yml
+# Géré par Ansible - TP Observabilité Sécurisée - Jalon B
+#
+# Scraping du Node Exporter de web-prod en HTTPS, certificat auto-signé
+# toléré (insecure_skip_verify), authentifié via Basic Auth.
+# Le mot de passe en clair n'est PAS stocké ici en clair sur disque de manière
+# permanente au-delà de ce fichier protégé (owner prometheus, mode 0640) ;
+# il provient du vault Ansible déchiffré au moment du provisioning.
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "localhost:9093"
+
+rule_files:
+  - "/etc/prometheus/rules/*.yml"
+
+scrape_configs:
+  - job_name: "node_exporter_web_prod"
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    basic_auth:
+      username: "{{ node_exporter_basic_auth_user }}"
+      password: "{{ node_exporter_basic_auth_password }}"
+    static_configs:
+      - targets:
+          - "10.0.20.20:9100"
+        labels:
+          zone: "dmz_production"
+          role: "web-prod"

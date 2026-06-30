@@ -1,0 +1,15 @@
+[paths]
+data = /var/lib/grafana
+logs = /var/log/grafana
+plugins = /var/lib/grafana/plugins
+provisioning = /usr/local/grafana/conf/provisioning
+
+[server]
+protocol = https
+http_port = 3000
+cert_file = /etc/grafana/tls/grafana.crt
+cert_key = /etc/grafana/tls/grafana.key
+
+[security]
+admin_user = admin
+admin_password = admin

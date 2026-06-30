@@ -1,0 +1,66 @@
+#!/usr/sbin/nft -f
+# ============================================================
+# nftables - web-prod - DMZ Production
+# Géré par Ansible - défense en profondeur (en complément de fw-router)
+# ============================================================
+
+define IF_PROD = "eth1"
+define GW_PROD = 10.0.20.1
+define IP_SUPERVISION = 10.0.10.5
+
+flush ruleset
+
+table inet filter {
+
+    chain input {
+        type filter hook input priority 0; policy drop;
+
+        iif "lo" accept
+        ct state established,related accept
+
+        # HTTPS public (fil rouge Nginx) - flux entrant légitime
+        tcp dport 443 ct state new accept
+        tcp dport 80 ct state new accept
+
+        # Prometheus scraping entrant : UNIQUEMENT depuis supervision, port 9100
+        ip saddr $IP_SUPERVISION tcp dport 9100 ct state new accept
+
+        # Webhook auto-healing : UNIQUEMENT depuis supervision (Alertmanager), port 9095
+        ip saddr $IP_SUPERVISION tcp dport 9095 ct state new accept
+
+        # SSH pour administration/Ansible (à restreindre en prod réelle)
+        tcp dport 22 ct state new accept
+
+        ip protocol icmp icmp type echo-request accept
+
+        log prefix "NFT-WEBPROD-INPUT-DROP: " counter drop
+    }
+
+    chain output {
+        type filter hook output priority 0; policy drop;
+
+        oif "lo" accept
+        ct state established,related accept
+
+        udp dport 53 accept
+        tcp dport 53 accept
+
+        # Zabbix Agent Push : sortie UNIQUEMENT vers supervision, port 10051
+        ip daddr $IP_SUPERVISION tcp dport 10051 ct state new accept
+
+        # Promtail -> Loki : sortie UNIQUEMENT vers supervision, port 3100
+        ip daddr $IP_SUPERVISION tcp dport 3100 ct state new accept
+
+        # Réponses HTTP/HTTPS sortantes (mises à jour système)
+        tcp dport 443 accept
+        tcp dport 80 accept
+
+        ip protocol icmp accept
+
+        log prefix "NFT-WEBPROD-OUTPUT-DROP: " counter drop
+    }
+
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+    }
+}

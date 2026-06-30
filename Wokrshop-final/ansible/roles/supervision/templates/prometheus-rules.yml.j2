@@ -1,0 +1,13 @@
+groups:
+  - name: m2shop_production
+    rules:
+      - alert: NginxDown
+        expr: node_systemd_unit_state{name="nginx.service", state="active", instance="10.0.20.20:9100"} == 0
+        for: 0s
+        labels:
+          severity: critical
+          zone: dmz_production
+          host: web-prod
+        annotations:
+          summary: "Nginx ne répond plus sur web-prod"
+          description: "Le service nginx.service n'est plus actif sur web-prod (10.0.20.20). Impact : indisponibilité du service web public M2-Shop."

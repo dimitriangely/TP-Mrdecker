@@ -1,0 +1,23 @@
+[Unit]
+Description=Webhook receiver (déclenchement auto-healing, Jalon D)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=healer
+Group=healer
+ExecStart=/usr/bin/python3 /usr/local/bin/webhook-receiver.py
+Restart=on-failure
+RestartSec=5
+
+# NoNewPrivileges=true N'EST PAS appliqué ici, volontairement : cette directive
+# bloquerait l'appel à sudo (mécanisme setuid) effectué par restart-nginx.sh,
+# cassant silencieusement l'auto-healing. La surface de privilège reste
+# strictement limitée par le sudoers chirurgical (une seule commande exacte
+# autorisée pour l'utilisateur healer, cf. /etc/sudoers.d/supervision).
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

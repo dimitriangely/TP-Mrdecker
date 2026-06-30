@@ -1,0 +1,30 @@
+---
+- name: Recharger nftables web-prod
+  systemd:
+    name: nftables
+    state: restarted
+
+- name: Redémarrer node_exporter
+  systemd:
+    name: node_exporter
+    state: restarted
+
+- name: Redémarrer zabbix-agent2
+  systemd:
+    name: zabbix-agent2
+    state: restarted
+
+- name: Recharger nginx
+  systemd:
+    name: nginx
+    state: reloaded
+
+- name: Redémarrer promtail
+  systemd:
+    name: promtail
+    state: restarted
+
+- name: Redémarrer webhook-receiver
+  systemd:
+    name: webhook-receiver
+    state: restarted

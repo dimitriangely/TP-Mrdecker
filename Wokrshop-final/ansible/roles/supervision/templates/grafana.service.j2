@@ -1,0 +1,17 @@
+[Unit]
+Description=Grafana Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=grafana
+Group=grafana
+ExecStart=/usr/local/grafana/bin/grafana server \
+    --config=/etc/grafana/grafana.ini \
+    --homepath=/usr/local/grafana
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

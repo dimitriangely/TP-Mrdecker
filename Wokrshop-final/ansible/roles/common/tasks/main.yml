@@ -1,0 +1,66 @@
+---
+# Rôle common : socle de base appliqué à TOUTES les VMs avant toute spécialisation
+# Validation attendue après ce rôle : ping ansible OK, paquets de base présents,
+# horloge synchronisée (important pour TLS et logs cohérents entre VMs).
+
+- name: Mise à jour du cache APT
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Installation des paquets de base
+  apt:
+    name:
+      - curl
+      - vim
+      - nftables
+      - chrony
+      - net-tools
+      - tcpdump
+      - gzip
+      - unzip
+      - python3
+      - python3-pip
+      - python3-passlib
+      - python3-bcrypt
+      - ca-certificates
+      - gnupg
+    state: present
+
+- name: Activation et démarrage de chrony (synchro horaire)
+  systemd:
+    name: chrony
+    enabled: true
+    state: started
+
+- name: Désactivation d'iptables-legacy au profit de nftables uniquement
+  apt:
+    name:
+      - iptables
+    state: absent
+  ignore_errors: true
+
+- name: Activation du service nftables (table vide par défaut, surchargée par chaque rôle)
+  systemd:
+    name: nftables
+    enabled: true
+    state: started
+
+- name: Création du groupe applicatif de supervision (non-root, cf. Jalon D)
+  group:
+    name: supervision
+    state: present
+
+- name: Définition du hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Mise à jour de /etc/hosts avec les 3 VMs (résolution interne simple)
+  blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - TP OBSERVABILITE"
+    block: |
+      10.0.20.20  web-prod
+      10.0.20.1   fw-router-prod
+      10.0.10.1   fw-router-admin
+      10.0.10.5   supervision

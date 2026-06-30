@@ -1,0 +1,30 @@
+# /etc/nginx/sites-available/m2shop.conf
+# Géré par Ansible - TP Observabilité Sécurisée - serveur web "fil rouge"
+
+server {
+    listen 80;
+    server_name web-prod.m2shop.local;
+    # Redirection HTTP -> HTTPS (flux web public en HTTPS, cf. sujet)
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name web-prod.m2shop.local;
+
+    ssl_certificate     /etc/nginx/tls/web-prod.crt;
+    ssl_certificate_key /etc/nginx/tls/web-prod.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    root /var/www/html;
+    index index.html;
+
+    # Logs standards, surveillés par Promtail (Jalon C) :
+    # /var/log/nginx/access.log et /var/log/nginx/error.log
+    access_log /var/log/nginx/access.log;
+    error_log  /var/log/nginx/error.log;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}

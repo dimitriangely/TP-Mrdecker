@@ -1,0 +1,13 @@
+[Unit]
+Description=Route statique vers DMZ Production (10.0.20.0/24) via fw-router
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/usr/sbin/ip route replace 10.0.20.0/24 via 10.0.10.1 dev eth1
+ExecStop=/usr/sbin/ip route del 10.0.20.0/24 via 10.0.10.1 dev eth1
+
+[Install]
+WantedBy=multi-user.target

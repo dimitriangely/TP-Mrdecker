@@ -1,0 +1,33 @@
+---
+# site.yml - Playbook principal
+# Exécuté via ansible_local sur chaque VM (jamais depuis l'hôte Windows)
+#
+# Ordre logique de construction (cf. méthodologie du Dossier d'Architecture) :
+#   1. common       -> socle de base, durcissement minimal, toutes VMs
+#   2. fw-router    -> Jalon A : cloisonnement réseau Zero-Trust
+#   3. web-prod     -> Jalon B (partiel) : services prod + chiffrement collecteurs
+#   4. supervision  -> Jalon B/C/D : collecte, dashboarding, alerting, auto-healing
+
+- name: Socle commun à toutes les VMs
+  hosts: all
+  become: true
+  roles:
+    - common
+
+- name: Cloisonnement réseau Zero-Trust (Jalon A)
+  hosts: router
+  become: true
+  roles:
+    - fw-router
+
+- name: Services de production durcis (Jalon A/B/C)
+  hosts: prod
+  become: true
+  roles:
+    - web-prod
+
+- name: Plateforme de supervision centralisée (Jalon B/C/D)
+  hosts: admin
+  become: true
+  roles:
+    - supervision

@@ -1,0 +1,24 @@
+---
+# Variables non sensibles - le vault.yml (chiffré) du même dossier fournit
+# les valeurs vault_* référencées ici. Cette indirection permet de versionner
+# ce fichier en clair tout en gardant les secrets chiffrés séparément.
+
+node_exporter_version: "1.8.2"
+node_exporter_basic_auth_user: "prometheus_scraper"
+node_exporter_basic_auth_password: "{{ vault_node_exporter_basic_auth_password }}"
+
+prometheus_version: "2.55.1"
+
+zabbix_psk_identity: "PSK_WEBPROD_001"
+zabbix_psk: "{{ vault_zabbix_psk }}"
+zabbix_version: "7.0"
+zabbix_db_name: "zabbix"
+zabbix_db_user: "zabbix"
+zabbix_db_password: "{{ vault_zabbix_db_password }}"
+zabbix_hostgroup_name: "DMZ Production"
+zabbix_host_name: "web-prod"
+loki_promtail_version: "3.5.1"
+grafana_archive_filename: "grafana_13.1.0_28013217238_linux_amd64.tar.gz"
+grafana_version: "13.1.0"
+alertmanager_version: "0.27.0"
+slack_webhook_url: "{{ vault_slack_webhook_url }}"

@@ -1,0 +1,25 @@
+[Unit]
+Description=Prometheus Node Exporter (durci TLS v1.3 + Basic Auth)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=node_exporter
+Group=node_exporter
+ExecStart=/usr/local/bin/node_exporter \
+    --web.config.file=/etc/node_exporter/web-config.yml \
+    --web.listen-address=:9100 \
+    --collector.systemd \
+    --collector.systemd.unit-include="(nginx|zabbix-agent2|promtail)\.service"
+Restart=on-failure
+RestartSec=5
+
+# Durcissement systemd minimal
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

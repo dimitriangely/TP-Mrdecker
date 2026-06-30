@@ -1,0 +1,9 @@
+# /etc/sudoers.d/supervision
+# Géré par Ansible - TP Observabilité Sécurisée - Jalon D
+#
+# Règle chirurgicale : le compte "healer" (non-root, dédié à la remédiation
+# automatique) ne peut exécuter QU'UNE SEULE commande exacte, sans wildcard,
+# sans argument variable. Aucune élévation globale, aucun accès shell,
+# aucune autre commande système.
+
+healer ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx.service

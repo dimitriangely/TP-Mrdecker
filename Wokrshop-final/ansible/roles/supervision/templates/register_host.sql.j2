@@ -1,0 +1,57 @@
+-- register_host.sql
+-- Généré par Ansible - TP Observabilité Sécurisée - Jalon B
+--
+-- Enregistrement direct en base du host {{ zabbix_host_name }} avec sa PSK,
+-- en l'absence de frontend/API Zabbix à ce stade (Jalon C).
+--
+-- IMPORTANT : le schéma Zabbix N'UTILISE PAS l'auto-increment MySQL pour ses
+-- clés primaires (hostid, groupid, hostgroupid, etc.). Zabbix gère ses propres
+-- compteurs via la table interne `ids` (table_name, field_name, nextid).
+-- Une simple INSERT sans hostid explicite produit donc hostid=0 (valeur par
+-- défaut d'une colonne entière NOT NULL sans AUTO_INCREMENT), une ligne
+-- invalide que le serveur ignore silencieusement en interne.
+--
+-- Correctif : on calcule nous-mêmes le prochain ID disponible (MAX+1) et on
+-- met à jour la table `ids` en conséquence, pour rester cohérent avec le
+-- système d'allocation interne de Zabbix.
+
+-- Nettoyage défensif d'une éventuelle ligne invalide issue d'une exécution précédente
+DELETE FROM hosts WHERE host = '{{ zabbix_host_name }}' AND hostid = 0;
+
+-- Groupe d'hôtes (idempotent : n'insère que si absent)
+INSERT INTO hstgrp (groupid, name)
+SELECT (SELECT IFNULL(MAX(groupid), 0) + 1 FROM hstgrp), '{{ zabbix_hostgroup_name }}'
+WHERE NOT EXISTS (SELECT 1 FROM hstgrp WHERE name = '{{ zabbix_hostgroup_name }}');
+
+-- Hôte avec sa PSK (idempotent : n'insère que si absent)
+INSERT INTO hosts (hostid, host, name, description, status, flags, tls_connect, tls_accept, tls_psk_identity, tls_psk)
+SELECT (SELECT IFNULL(MAX(hostid), 0) + 1 FROM hosts),
+       '{{ zabbix_host_name }}', '{{ zabbix_host_name }}', '', 0, 0, 2, 2,
+       '{{ zabbix_psk_identity }}', '{{ zabbix_psk }}'
+WHERE NOT EXISTS (SELECT 1 FROM hosts WHERE host = '{{ zabbix_host_name }}');
+
+-- Association hôte <-> groupe (idempotent)
+INSERT INTO hosts_groups (hostgroupid, hostid, groupid)
+SELECT (SELECT IFNULL(MAX(hostgroupid), 0) + 1 FROM hosts_groups),
+       (SELECT hostid FROM hosts WHERE host = '{{ zabbix_host_name }}' LIMIT 1),
+       (SELECT groupid FROM hstgrp WHERE name = '{{ zabbix_hostgroup_name }}' LIMIT 1)
+WHERE NOT EXISTS (
+    SELECT 1 FROM hosts_groups hg
+    JOIN hosts h ON hg.hostid = h.hostid
+    JOIN hstgrp g ON hg.groupid = g.groupid
+    WHERE h.host = '{{ zabbix_host_name }}' AND g.name = '{{ zabbix_hostgroup_name }}'
+);
+
+-- Synchronisation des compteurs internes Zabbix (table ids), pour que le
+-- serveur/frontend n'attribue jamais un ID déjà utilisé par nos insertions manuelles.
+INSERT INTO ids (table_name, field_name, nextid)
+SELECT 'hosts', 'hostid', (SELECT MAX(hostid) FROM hosts)
+ON DUPLICATE KEY UPDATE nextid = GREATEST(nextid, (SELECT MAX(hostid) FROM hosts));
+
+INSERT INTO ids (table_name, field_name, nextid)
+SELECT 'hstgrp', 'groupid', (SELECT MAX(groupid) FROM hstgrp)
+ON DUPLICATE KEY UPDATE nextid = GREATEST(nextid, (SELECT MAX(groupid) FROM hstgrp));
+
+INSERT INTO ids (table_name, field_name, nextid)
+SELECT 'hosts_groups', 'hostgroupid', (SELECT MAX(hostgroupid) FROM hosts_groups)
+ON DUPLICATE KEY UPDATE nextid = GREATEST(nextid, (SELECT MAX(hostgroupid) FROM hosts_groups));

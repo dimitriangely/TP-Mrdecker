@@ -1,0 +1,122 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# TP Observabilité Sécurisée - Workshop ANSSI
+# Architecture : 3 VMs Debian 13, 2 zones réseau cloisonnées via fw-router
+#
+#   web-prod (10.0.20.20)  <--->  fw-router (.20.1 / .10.1)  <--->  supervision (10.0.10.5)
+#        DMZ Production                 cloisonnement                  DMZ Admin
+#
+# IMPORTANT : web-prod et supervision n'ont AUCUN réseau privé en commun.
+# Tout flux inter-zone DOIT transiter par fw-router. C'est ce qui permet
+# de valider le Zero-Trust lors du protocole de recette (audit des flux).
+
+BOX_IMAGE = "debian/bookworm64" # à remplacer par une box Debian 13 si disponible sur Vagrant Cloud
+# NB : si "debian/trixie64" (Debian 13) est disponible sur ton Vagrant Cloud local,
+# remplace BOX_IMAGE en conséquence. bookworm64 est mis en fallback de compatibilité.
+
+Vagrant.configure("2") do |config|
+
+  # ============================================================
+  # VM 1 : web-prod — DMZ Production
+  # Nginx, Node Exporter (TLS+Auth), Zabbix Agent (Push/PSK), Promtail
+  # ============================================================
+  config.vm.define "web-prod" do |webprod|
+    webprod.vm.box = BOX_IMAGE
+    webprod.vm.hostname = "web-prod"
+    webprod.vm.network "private_network", ip: "10.0.20.20", virtualbox__intnet: "net-prod"
+
+    webprod.vm.provider "virtualbox" do |vb|
+      vb.name = "tp-obs-web-prod"
+      vb.memory = 1024
+      vb.cpus = 1
+    end
+
+    # Dépôt du mot de passe vault DIRECTEMENT sur la VM (hors dossier synchronisé
+    # /vagrant) : le partage vboxsf depuis un hôte Windows expose tous les
+    # fichiers comme exécutables côté invité, ce qui fait qu'Ansible tente
+    # d'EXÉCUTER .vault_pass.txt comme un script vault au lieu de le lire en
+    # texte brut. En l'écrivant directement sur le filesystem ext4 de la VM,
+    # on garde un contrôle natif des permissions Unix.
+    webprod.vm.provision "shell", inline: <<-SHELL
+      echo "ChangeMe-VaultPass-TP2026" > /etc/ansible-vault-pass.txt
+      chmod 644 /etc/ansible-vault-pass.txt
+    SHELL
+
+    # Provisioning EXCLUSIVEMENT via ansible_local, jamais depuis l'hôte Windows
+    webprod.vm.provision "ansible_local" do |ansible|
+      ansible.playbook = "ansible/site.yml"
+      ansible.provisioning_path = "/vagrant"
+      ansible.inventory_path = "ansible/inventory/hosts.ini"
+      ansible.limit = "web-prod"
+      ansible.install_mode = "default"
+      ansible.vault_password_file = "/etc/ansible-vault-pass.txt"
+    end
+  end
+
+  # ============================================================
+  # VM 2 : fw-router — Cloisonnement inter-zones (Zero-Trust)
+  # nftables, routage, politique DROP par défaut
+  # Double interface : une patte Prod, une patte Admin
+  # ============================================================
+  config.vm.define "fw-router" do |fw|
+    fw.vm.box = BOX_IMAGE
+    fw.vm.hostname = "fw-router"
+    fw.vm.network "private_network", ip: "10.0.20.1", virtualbox__intnet: "net-prod"
+    fw.vm.network "private_network", ip: "10.0.10.1", virtualbox__intnet: "net-admin"
+
+    fw.vm.provider "virtualbox" do |vb|
+      vb.name = "tp-obs-fw-router"
+      vb.memory = 512
+      vb.cpus = 1
+    end
+
+    fw.vm.provision "shell", inline: <<-SHELL
+      echo "ChangeMe-VaultPass-TP2026" > /etc/ansible-vault-pass.txt
+      chmod 644 /etc/ansible-vault-pass.txt
+    SHELL
+
+    fw.vm.provision "ansible_local" do |ansible|
+      ansible.playbook = "ansible/site.yml"
+      ansible.provisioning_path = "/vagrant"
+      ansible.inventory_path = "ansible/inventory/hosts.ini"
+      ansible.limit = "fw-router"
+      ansible.install_mode = "default"
+      ansible.vault_password_file = "/etc/ansible-vault-pass.txt"
+    end
+  end
+
+  # ============================================================
+  # VM 3 : supervision — DMZ Admin
+  # Prometheus, Zabbix Server, Loki, Grafana
+  # ============================================================
+  config.vm.define "supervision" do |sup|
+    sup.vm.box = BOX_IMAGE
+    sup.vm.hostname = "supervision"
+    sup.vm.network "private_network", ip: "10.0.10.5", virtualbox__intnet: "net-admin"
+
+    # Forward port pour accéder à Grafana depuis l'hôte Windows en HTTPS uniquement
+    sup.vm.network "forwarded_port", guest: 3000, host: 3443, host_ip: "127.0.0.1"
+
+    sup.vm.provider "virtualbox" do |vb|
+      vb.name = "tp-obs-supervision"
+      vb.memory = 2048
+      vb.cpus = 2
+    end
+
+    sup.vm.provision "shell", inline: <<-SHELL
+      echo "ChangeMe-VaultPass-TP2026" > /etc/ansible-vault-pass.txt
+      chmod 644 /etc/ansible-vault-pass.txt
+    SHELL
+
+    sup.vm.provision "ansible_local" do |ansible|
+      ansible.playbook = "ansible/site.yml"
+      ansible.provisioning_path = "/vagrant"
+      ansible.inventory_path = "ansible/inventory/hosts.ini"
+      ansible.limit = "supervision"
+      ansible.install_mode = "default"
+      ansible.vault_password_file = "/etc/ansible-vault-pass.txt"
+    end
+  end
+
+end

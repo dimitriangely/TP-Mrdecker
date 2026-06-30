@@ -1,0 +1,33 @@
+---
+# Rôle fw-router : Jalon A - Cloisonnement et Filtrage Réseau
+#
+# Politique : DROP par défaut en INPUT/OUTPUT/FORWARD sur cette VM ET routage
+# contrôlé entre net-prod et net-admin. Seuls les flux explicitement listés
+# dans la matrice de flux (cf. docs/matrice-de-flux.md) passent.
+#
+# Validation : depuis web-prod, tenter de joindre supervision sur un port
+# NON autorisé (ex: 22, 3000) doit timeout. Seuls 9100 (admin->prod) et
+# 10051 (prod->admin) doivent passer.
+
+- name: Activation du forwarding IPv4 (le routeur doit router, pas seulement filtrer)
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+
+- name: Déploiement de la table nftables de cloisonnement inter-zones
+  template:
+    src: nftables-router.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Recharger nftables
+
+- name: S'assurer que nftables est démarré et chargé avec la conf
+  systemd:
+    name: nftables
+    enabled: true
+    state: restarted

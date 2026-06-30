@@ -1,0 +1,5 @@
+---
+- name: Recharger nftables
+  systemd:
+    name: nftables
+    state: restarted

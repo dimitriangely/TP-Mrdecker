@@ -1,0 +1,22 @@
+# zabbix_agent2.conf
+# Géré par Ansible - TP Observabilité Sécurisée - Jalon B
+#
+# Mode ACTIF STRICT : l'agent initie la connexion vers le serveur (ServerActive),
+# jamais l'inverse. Conforme au sujet : "Aucun flux entrant venant du serveur
+# Zabbix n'est autorisé en production."
+
+Hostname={{ zabbix_host_name }}
+
+# Server= reste nécessaire pour les checks passifs éventuels mais aucune règle
+# nftables n'autorise un flux entrant Admin->Prod sur le port agent (10050) :
+# cette directive est donc sans effet pratique ici, volontairement laissée
+# par cohérence de configuration, conformément au principe Zero-Trust du sujet.
+Server=10.0.10.5
+ServerActive=10.0.10.5
+
+TLSConnect=psk
+TLSPSKFile=/etc/zabbix/zabbix_agent2.psk
+TLSPSKIdentity={{ zabbix_psk_identity }}
+
+LogFile=/var/log/zabbix/zabbix_agent2.log
+LogFileSize=1

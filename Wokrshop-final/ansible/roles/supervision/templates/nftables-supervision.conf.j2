@@ -1,0 +1,63 @@
+#!/usr/sbin/nft -f
+# ============================================================
+# nftables - supervision - DMZ Admin
+# Géré par Ansible - défense en profondeur (en complément de fw-router)
+# ============================================================
+
+define IF_ADMIN = "eth1"
+define IP_WEB_PROD = 10.0.20.20
+
+flush ruleset
+
+table inet filter {
+
+    chain input {
+        type filter hook input priority 0; policy drop;
+
+        iif "lo" accept
+        ct state established,related accept
+
+        # Zabbix Server : réception du push agent UNIQUEMENT depuis web-prod
+        ip saddr $IP_WEB_PROD tcp dport 10051 ct state new accept
+
+        # Grafana en HTTPS uniquement (accès SRE)
+        tcp dport 3000 ct state new accept
+
+        # Loki : réception des logs Promtail UNIQUEMENT depuis web-prod
+        ip saddr $IP_WEB_PROD tcp dport 3100 ct state new accept
+
+        # SSH administration
+        tcp dport 22 ct state new accept
+
+        ip protocol icmp icmp type echo-request accept
+
+        log prefix "NFT-SUPERVISION-INPUT-DROP: " counter drop
+    }
+
+    chain output {
+        type filter hook output priority 0; policy drop;
+
+        oif "lo" accept
+        ct state established,related accept
+
+        udp dport 53 accept
+        tcp dport 53 accept
+
+        # Prometheus scraping sortant : UNIQUEMENT vers web-prod, port 9100
+        ip daddr $IP_WEB_PROD tcp dport 9100 accept
+
+        # Webhook auto-healing : UNIQUEMENT vers web-prod, port 9095
+        ip daddr $IP_WEB_PROD tcp dport 9095 accept
+
+        # Webhook Slack/Discord (alerting) - sortant HTTPS uniquement
+        tcp dport 443 accept
+
+        ip protocol icmp accept
+
+        log prefix "NFT-SUPERVISION-OUTPUT-DROP: " counter drop
+    }
+
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+    }
+}

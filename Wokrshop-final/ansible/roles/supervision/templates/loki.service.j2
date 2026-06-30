@@ -1,0 +1,19 @@
+[Unit]
+Description=Loki (agrégation de logs)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=loki
+Group=loki
+ExecStart=/usr/local/bin/loki -config.file=/etc/loki/loki-config.yml
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

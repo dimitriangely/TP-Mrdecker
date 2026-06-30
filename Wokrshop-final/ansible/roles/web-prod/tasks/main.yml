@@ -1,0 +1,413 @@
+---
+# Rôle web-prod : DMZ Production
+#
+# Ce rôle est volontairement livré en squelette pour cette première itération.
+# Couche déjà posée : nftables côté hôte (défense en profondeur, en plus du
+# fw-router) pour qu'aucun flux non autorisé ne soit accepté MÊME si le
+# routeur était contourné.
+#
+# Couches à venir (prochaines sessions, une par une, validées séparément) :
+#   - Jalon A (fin)   : Nginx (fil rouge)
+#   - Jalon B         : Node Exporter + TLS v1.3 + bcrypt (web-config.yml)
+#   - Jalon B         : Zabbix Agent en mode Actif + PSK 64 hex
+#   - Jalon C         : Promtail vers Loki (access.log / error.log)
+
+- name: Déploiement nftables côté hôte web-prod (défense en profondeur)
+  template:
+    src: nftables-webprod.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Recharger nftables web-prod
+
+- name: Démarrage et activation nftables
+  systemd:
+    name: nftables
+    enabled: true
+    state: restarted
+
+# --- Route statique vers la zone Admin (indispensable : deux /24 distincts) ---
+# Sans cette route, web-prod n'a aucun moyen de savoir que fw-router (10.0.20.1)
+# est la passerelle pour joindre 10.0.10.0/24 ; il retombe sinon sur sa route
+# par défaut NAT (eth0), qui ne mène nulle part côté Admin -> timeout silencieux.
+
+- name: Déploiement du service systemd de route statique vers DMZ Admin
+  template:
+    src: static-route.service.j2
+    dest: /etc/systemd/system/static-route-admin.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: static_route_unit
+
+- name: Rechargement du daemon systemd si le service a changé
+  systemd:
+    daemon_reload: true
+  when: static_route_unit.changed
+
+- name: Activation et démarrage immédiat de la route statique
+  systemd:
+    name: static-route-admin.service
+    enabled: true
+    state: restarted
+
+# --- Jalon B : Node Exporter durci (TLS v1.3 + Basic Auth bcrypt) ---
+
+- name: Création du compte système node_exporter (non privilégié)
+  user:
+    name: node_exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Création des répertoires Node Exporter
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: node_exporter
+    group: node_exporter
+    mode: "0750"
+  loop:
+    - /etc/node_exporter
+    - /etc/node_exporter/tls
+
+- name: Téléchargement du binaire Node Exporter
+  get_url:
+    url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    dest: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
+    mode: "0644"
+
+- name: Extraction du binaire Node Exporter
+  unarchive:
+    src: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+
+- name: Installation du binaire Node Exporter dans /usr/local/bin
+  copy:
+    src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+    dest: /usr/local/bin/node_exporter
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+
+- name: Génération de la clé privée TLS auto-signée (si absente)
+  command: >
+    openssl req -x509 -newkey rsa:4096 -nodes
+    -keyout /etc/node_exporter/tls/node_exporter.key
+    -out /etc/node_exporter/tls/node_exporter.crt
+    -days 825
+    -subj "/C=FR/ST=Ile-de-France/L=Paris/O=M2-Shop/OU=Production/CN=web-prod.m2shop.local"
+    -addext "subjectAltName=IP:10.0.20.20,DNS:web-prod"
+  args:
+    creates: /etc/node_exporter/tls/node_exporter.crt
+
+- name: Permissions strictes sur la clé privée TLS
+  file:
+    path: /etc/node_exporter/tls/node_exporter.key
+    owner: node_exporter
+    group: node_exporter
+    mode: "0640"
+
+- name: Permissions sur le certificat TLS
+  file:
+    path: /etc/node_exporter/tls/node_exporter.crt
+    owner: node_exporter
+    group: node_exporter
+    mode: "0644"
+
+- name: Déploiement de web-config.yml (TLS v1.3 forcé + Basic Auth bcrypt)
+  template:
+    src: web-config.yml.j2
+    dest: /etc/node_exporter/web-config.yml
+    owner: node_exporter
+    group: node_exporter
+    mode: "0640"
+  notify: Redémarrer node_exporter
+
+- name: Déploiement du service systemd Node Exporter
+  template:
+    src: node_exporter.service.j2
+    dest: /etc/systemd/system/node_exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: node_exporter_unit
+
+- name: Rechargement systemd si le service Node Exporter a changé
+  systemd:
+    daemon_reload: true
+  when: node_exporter_unit.changed
+
+- name: Activation et démarrage de Node Exporter
+  systemd:
+    name: node_exporter
+    enabled: true
+    state: started
+
+# --- Jalon B : Zabbix Agent (mode Actif, chiffrement PSK) ---
+
+- name: Téléchargement du paquet zabbix-release (dépôt officiel Zabbix {{ zabbix_version }})
+  get_url:
+    url: "https://repo.zabbix.com/zabbix/{{ zabbix_version }}/debian/pool/main/z/zabbix-release/zabbix-release_{{ zabbix_version }}-2+debian12_all.deb"
+    dest: "/tmp/zabbix-release_{{ zabbix_version }}-2+debian12_all.deb"
+    mode: "0644"
+
+- name: Installation du paquet de dépôt zabbix-release
+  apt:
+    deb: "/tmp/zabbix-release_{{ zabbix_version }}-2+debian12_all.deb"
+  register: zabbix_repo_install
+
+- name: Mise à jour du cache APT après ajout du dépôt Zabbix
+  apt:
+    update_cache: true
+  when: zabbix_repo_install.changed
+
+- name: Installation de Zabbix Agent 2
+  apt:
+    name: zabbix-agent2
+    state: present
+
+- name: Dépôt du fichier PSK pour l'agent (contenu = clé hex brute, jamais le mot de passe en clair ailleurs)
+  copy:
+    content: "{{ zabbix_psk }}"
+    dest: /etc/zabbix/zabbix_agent2.psk
+    owner: zabbix
+    group: zabbix
+    mode: "0640"
+  notify: Redémarrer zabbix-agent2
+
+- name: Configuration de zabbix_agent2.conf (mode Actif strict, PSK)
+  template:
+    src: zabbix_agent2.conf.j2
+    dest: /etc/zabbix/zabbix_agent2.conf
+    owner: root
+    group: zabbix
+    mode: "0640"
+  notify: Redémarrer zabbix-agent2
+
+- name: Activation et démarrage de Zabbix Agent 2
+  systemd:
+    name: zabbix-agent2
+    enabled: true
+    state: started
+
+# --- Jalon C (préalable) : Nginx, serveur web "fil rouge" du sujet ---
+
+- name: Installation de Nginx
+  apt:
+    name: nginx
+    state: present
+
+- name: Création du répertoire TLS public Nginx
+  file:
+    path: /etc/nginx/tls
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Génération du certificat TLS auto-signé pour le site public (si absent)
+  command: >
+    openssl req -x509 -newkey rsa:4096 -nodes
+    -keyout /etc/nginx/tls/web-prod.key
+    -out /etc/nginx/tls/web-prod.crt
+    -days 825
+    -subj "/C=FR/ST=Ile-de-France/L=Paris/O=M2-Shop/OU=Production/CN=web-prod.m2shop.local"
+    -addext "subjectAltName=IP:10.0.20.20,DNS:web-prod"
+  args:
+    creates: /etc/nginx/tls/web-prod.crt
+
+- name: Permissions sur la clé privée TLS Nginx
+  file:
+    path: /etc/nginx/tls/web-prod.key
+    owner: root
+    group: root
+    mode: "0640"
+
+- name: Déploiement de la page d'accueil fil rouge
+  copy:
+    content: |
+      <!DOCTYPE html>
+      <html lang="fr">
+      <head><meta charset="utf-8"><title>M2-Shop</title></head>
+      <body>
+        <h1>M2-Shop — Plateforme de production</h1>
+        <p>Serveur web de production (TP Observabilite Securisee).</p>
+      </body>
+      </html>
+    dest: /var/www/html/index.html
+    owner: www-data
+    group: www-data
+    mode: "0644"
+
+- name: Déploiement du vhost Nginx (HTTPS public + logs standards pour Promtail)
+  template:
+    src: nginx-m2shop.conf.j2
+    dest: /etc/nginx/sites-available/m2shop.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger nginx
+
+- name: Activation du vhost m2shop (lien symbolique)
+  file:
+    src: /etc/nginx/sites-available/m2shop.conf
+    dest: /etc/nginx/sites-enabled/m2shop.conf
+    state: link
+  notify: Recharger nginx
+
+- name: Désactivation du vhost par défaut Nginx
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Recharger nginx
+
+- name: Activation et démarrage de Nginx
+  systemd:
+    name: nginx
+    enabled: true
+    state: started
+
+# --- Jalon C : Promtail (collecte des logs Nginx vers Loki) ---
+
+- name: Création du compte système promtail (non privilégié)
+  user:
+    name: promtail
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Ajout de l'utilisateur promtail au groupe adm (lecture des logs Nginx)
+  user:
+    name: promtail
+    groups: adm
+    append: true
+
+- name: Création des répertoires Promtail
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: promtail
+    group: promtail
+    mode: "0750"
+  loop:
+    - /etc/promtail
+    - /var/lib/promtail
+
+- name: Téléchargement de l'archive Promtail
+  get_url:
+    url: "https://github.com/grafana/loki/releases/download/v{{ loki_promtail_version }}/promtail-linux-amd64.zip"
+    dest: "/tmp/promtail-linux-amd64.zip"
+    mode: "0644"
+
+- name: Extraction du binaire Promtail
+  unarchive:
+    src: /tmp/promtail-linux-amd64.zip
+    dest: /tmp
+    remote_src: true
+    creates: /tmp/promtail-linux-amd64
+
+- name: Installation du binaire Promtail
+  copy:
+    src: /tmp/promtail-linux-amd64
+    dest: /usr/local/bin/promtail
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+
+- name: Déploiement de la configuration Promtail (surveillance access.log/error.log)
+  template:
+    src: promtail-config.yml.j2
+    dest: /etc/promtail/promtail-config.yml
+    owner: promtail
+    group: promtail
+    mode: "0640"
+  notify: Redémarrer promtail
+
+- name: Déploiement du service systemd Promtail
+  template:
+    src: promtail.service.j2
+    dest: /etc/systemd/system/promtail.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: promtail_unit
+
+- name: Rechargement systemd si le service Promtail a changé
+  systemd:
+    daemon_reload: true
+  when: promtail_unit.changed
+
+- name: Activation et démarrage de Promtail
+  systemd:
+    name: promtail
+    enabled: true
+    state: started
+
+# --- Jalon D : Auto-healing (compte dédié non-root + sudoers chirurgical) ---
+
+- name: Création du compte système healer (non privilégié, dédié à la remédiation)
+  user:
+    name: healer
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Création du répertoire de logs healer
+  file:
+    path: /var/log/healer
+    state: directory
+    owner: healer
+    group: healer
+    mode: "0750"
+
+- name: Déploiement du script de remédiation (relance Nginx)
+  template:
+    src: restart-nginx.sh.j2
+    dest: /usr/local/bin/restart-nginx.sh
+    owner: root
+    group: healer
+    mode: "0750"
+
+- name: Déploiement du sudoers chirurgical (healer -> systemctl restart nginx.service UNIQUEMENT)
+  template:
+    src: sudoers-supervision.j2
+    dest: /etc/sudoers.d/supervision
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+- name: Déploiement du webhook receiver Python (bibliothèque standard uniquement)
+  template:
+    src: webhook-receiver.py.j2
+    dest: /usr/local/bin/webhook-receiver.py
+    owner: root
+    group: healer
+    mode: "0750"
+  notify: Redémarrer webhook-receiver
+
+- name: Déploiement du service systemd du webhook receiver
+  template:
+    src: webhook-receiver.service.j2
+    dest: /etc/systemd/system/webhook-receiver.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: webhook_receiver_unit
+
+- name: Rechargement systemd si le service webhook-receiver a changé
+  systemd:
+    daemon_reload: true
+  when: webhook_receiver_unit.changed
+
+- name: Activation et démarrage du webhook receiver
+  systemd:
+    name: webhook-receiver
+    enabled: true
+    state: started

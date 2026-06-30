@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""
+webhook-receiver.py
+Géré par Ansible - TP Observabilité Sécurisée - Jalon D
+
+Webhook receiver minimaliste, bibliothèque standard uniquement (pas de
+dépendance externe type Flask, pour limiter la surface d'attaque). Écoute
+en local sur 127.0.0.1 ET sur l'IP privée de web-prod (10.0.20.20) pour
+recevoir les appels d'Alertmanager depuis la zone Admin.
+
+Comportement strict :
+  - répond uniquement sur le chemin /alert, en POST
+  - ne déclenche le script de remédiation QUE si l'alerte concerne
+    explicitement "NginxDown" et est à l'état "firing"
+  - toute autre requête est ignorée silencieusement (204, pas d'info leak)
+"""
+
+import json
+import subprocess
+import logging
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+LISTEN_ADDRESS = "0.0.0.0"
+LISTEN_PORT = 9095
+REMEDIATION_SCRIPT = "/usr/local/bin/restart-nginx.sh"
+LOG_FILE = "/var/log/healer/webhook-receiver.log"
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+
+
+class AlertWebhookHandler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        # Redirige les logs HTTP par défaut vers notre fichier de log dédié
+        logging.info("HTTP %s", fmt % args)
+
+    def do_POST(self):
+        if self.path != "/alert":
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            logging.warning("Payload JSON invalide reçu, ignoré")
+            self.send_response(400)
+            self.end_headers()
+            return
+
+        alerts = payload.get("alerts", [])
+        triggered = False
+
+        for alert in alerts:
+            alertname = alert.get("labels", {}).get("alertname", "")
+            status = alert.get("status", "")
+            if alertname == "NginxDown" and status == "firing":
+                triggered = True
+
+        if triggered:
+            logging.info("Alerte NginxDown (firing) reçue - déclenchement du script de remédiation")
+            try:
+                result = subprocess.run(
+                    [REMEDIATION_SCRIPT],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                logging.info(
+                    "Script exécuté, code retour=%s, stdout=%s, stderr=%s",
+                    result.returncode, result.stdout.strip(), result.stderr.strip(),
+                )
+            except subprocess.TimeoutExpired:
+                logging.error("Le script de remédiation a dépassé le timeout de 30s")
+        else:
+            logging.info("Webhook reçu mais aucune alerte NginxDown firing - aucune action")
+
+        self.send_response(204)
+        self.end_headers()
+
+
+if __name__ == "__main__":
+    server = ThreadingHTTPServer((LISTEN_ADDRESS, LISTEN_PORT), AlertWebhookHandler)
+    logging.info("Webhook receiver démarré sur %s:%s", LISTEN_ADDRESS, LISTEN_PORT)
+    server.serve_forever()

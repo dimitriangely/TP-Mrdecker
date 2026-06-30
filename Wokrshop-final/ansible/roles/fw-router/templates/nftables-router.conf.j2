@@ -1,0 +1,87 @@
+#!/usr/sbin/nft -f
+# ============================================================
+# nftables - fw-router - Cloisonnement Zero-Trust inter-zones
+# Géré par Ansible - TP Observabilité Sécurisée
+#
+# Topologie :
+#   eth1 (net-prod)  : 10.0.20.1  <-> web-prod (10.0.20.20)
+#   eth2 (net-admin) : 10.0.10.1  <-> supervision (10.0.10.5)
+#
+# ATTENTION : adapter IF_PROD / IF_ADMIN aux interfaces réelles
+# constatées via `ip a` sur la VM (souvent enp0s8 / enp0s9 sous Debian/VBox).
+# ============================================================
+
+define IF_PROD = "eth1"
+define IF_ADMIN = "eth2"
+define IP_WEB_PROD = 10.0.20.20
+define IP_SUPERVISION = 10.0.10.5
+
+flush ruleset
+
+table inet filter {
+
+    chain input {
+        type filter hook input priority 0; policy drop;
+
+        # Trafic loopback et connexions déjà établies
+        iif "lo" accept
+        ct state established,related accept
+
+        # Administration SSH du routeur lui-même (à restreindre encore en prod réelle
+        # à une IP de bastion ; ouvert ici aux deux zones pour les besoins du TP)
+        tcp dport 22 ct state new accept
+
+        # ICMP utile au diagnostic (ping) - peut être retiré pour un Zero-Trust strict
+        ip protocol icmp icmp type echo-request accept
+
+        # Tout le reste en entrée vers le routeur lui-même est droppé
+        log prefix "NFT-INPUT-DROP: " counter drop
+    }
+
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+
+        ct state established,related accept
+
+        # --- Flux Prometheus (Pull) : Admin -> Prod, port 9100/TCP UNIQUEMENT ---
+        # Le serveur Prometheus (zone Admin) est seul autorisé à initier
+        # une connexion vers le Node Exporter en zone Prod.
+        iifname $IF_ADMIN oifname $IF_PROD ip saddr $IP_SUPERVISION ip daddr $IP_WEB_PROD tcp dport 9100 ct state new accept
+
+        # --- Flux Zabbix Agent (Push) : Prod -> Admin, port 10051/TCP UNIQUEMENT ---
+        # L'agent Zabbix en zone Prod initie la connexion vers le serveur Zabbix
+        # en zone Admin. Aucun flux entrant initié depuis l'Admin vers Prod
+        # sur ce service (mode Actif strict).
+        iifname $IF_PROD oifname $IF_ADMIN ip saddr $IP_WEB_PROD ip daddr $IP_SUPERVISION tcp dport 10051 ct state new accept
+
+        # --- Flux Promtail -> Loki : Prod -> Admin, port 3100/TCP UNIQUEMENT ---
+        iifname $IF_PROD oifname $IF_ADMIN ip saddr $IP_WEB_PROD ip daddr $IP_SUPERVISION tcp dport 3100 ct state new accept
+
+        # --- Flux Alertmanager -> Webhook auto-healing : Admin -> Prod, port 9095/TCP UNIQUEMENT ---
+        # Déclenchement de la remédiation automatique (Jalon D). Le webhook
+        # receiver tourne sur web-prod (exécution locale du script requise),
+        # mais c'est bien Alertmanager (zone Admin) qui initie l'appel.
+        iifname $IF_ADMIN oifname $IF_PROD ip saddr $IP_SUPERVISION ip daddr $IP_WEB_PROD tcp dport 9095 ct state new accept
+
+        # Tout le reste en FORWARD est droppé et journalisé (preuve d'audit)
+        log prefix "NFT-FORWARD-DROP: " counter drop
+    }
+
+    chain output {
+        type filter hook output priority 0; policy drop;
+
+        oif "lo" accept
+        ct state established,related accept
+
+        # Sortie du routeur lui-même : DNS + HTTPS sortant (mises à jour, webhook si besoin)
+        udp dport 53 accept
+        tcp dport 53 accept
+        tcp dport 443 accept
+        tcp dport 80 accept
+
+        # Réponses ICMP
+        ip protocol icmp accept
+
+        log prefix "NFT-OUTPUT-DROP: " counter drop
+    }
+}

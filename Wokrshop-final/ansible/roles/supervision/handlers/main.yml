@@ -1,0 +1,30 @@
+---
+- name: Recharger nftables supervision
+  systemd:
+    name: nftables
+    state: restarted
+
+- name: Redémarrer prometheus
+  systemd:
+    name: prometheus
+    state: restarted
+
+- name: Redémarrer alertmanager
+  systemd:
+    name: alertmanager
+    state: restarted
+
+- name: Redémarrer zabbix-server
+  systemd:
+    name: zabbix-server
+    state: restarted
+
+- name: Redémarrer loki
+  systemd:
+    name: loki
+    state: restarted
+
+- name: Redémarrer grafana
+  systemd:
+    name: grafana
+    state: restarted

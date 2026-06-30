@@ -1,0 +1,529 @@
+---
+# Rôle supervision : DMZ Admin
+#
+# Squelette pour cette première itération. Couche déjà posée : nftables
+# côté hôte (défense en profondeur).
+#
+# Couches à venir (prochaines sessions) :
+#   - Jalon B : Prometheus (scheme https, tls_config insecure_skip_verify, basic_auth)
+#   - Jalon B : Zabbix Server (listening 10051, PSK)
+#   - Jalon C : Loki (réception Promtail)
+#   - Jalon C : Grafana (HTTPS only, dashboard unifié métriques + logs)
+#   - Jalon D : Alertmanager/règles Zabbix -> webhook Slack/Discord (<60s)
+#   - Jalon D : script auto-healing + sudoers chirurgical non-root
+
+- name: Déploiement nftables côté hôte supervision (défense en profondeur)
+  template:
+    src: nftables-supervision.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Recharger nftables supervision
+
+- name: Démarrage et activation nftables
+  systemd:
+    name: nftables
+    enabled: true
+    state: restarted
+
+# --- Route statique vers la zone Prod (indispensable : deux /24 distincts) ---
+- name: Déploiement du service systemd de route statique vers DMZ Production
+  template:
+    src: static-route.service.j2
+    dest: /etc/systemd/system/static-route-prod.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: static_route_unit
+
+- name: Rechargement du daemon systemd si le service a changé
+  systemd:
+    daemon_reload: true
+  when: static_route_unit.changed
+
+- name: Activation et démarrage immédiat de la route statique
+  systemd:
+    name: static-route-prod.service
+    enabled: true
+    state: restarted
+
+# --- Jalon B : Prometheus (scrape HTTPS + Basic Auth vers Node Exporter) ---
+
+- name: Création du compte système prometheus (non privilégié)
+  user:
+    name: prometheus
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Création des répertoires Prometheus
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0750"
+  loop:
+    - /etc/prometheus
+    - /var/lib/prometheus
+
+- name: Téléchargement du binaire Prometheus
+  get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: "/tmp/prometheus-{{ prometheus_version }}.tar.gz"
+    mode: "0644"
+
+- name: Extraction du binaire Prometheus
+  unarchive:
+    src: "/tmp/prometheus-{{ prometheus_version }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/prometheus"
+
+- name: Installation des binaires Prometheus
+  copy:
+    src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+  loop:
+    - prometheus
+    - promtool
+
+- name: Création du répertoire des règles d'alerte Prometheus
+  file:
+    path: /etc/prometheus/rules
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0750"
+
+- name: Déploiement de la règle d'alerte NginxDown
+  template:
+    src: prometheus-rules.yml.j2
+    dest: /etc/prometheus/rules/m2shop.yml
+    owner: prometheus
+    group: prometheus
+    mode: "0640"
+  notify: Redémarrer prometheus
+
+- name: Déploiement de prometheus.yml (scrape HTTPS + Basic Auth + TLS auto-signé toléré)
+  template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: prometheus
+    group: prometheus
+    mode: "0640"
+  notify: Redémarrer prometheus
+
+- name: Déploiement du service systemd Prometheus
+  template:
+    src: prometheus.service.j2
+    dest: /etc/systemd/system/prometheus.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: prometheus_unit
+
+- name: Rechargement systemd si le service Prometheus a changé
+  systemd:
+    daemon_reload: true
+  when: prometheus_unit.changed
+
+- name: Activation et démarrage de Prometheus
+  systemd:
+    name: prometheus
+    enabled: true
+    state: started
+
+# --- Jalon D : Alertmanager (routage des alertes vers Slack) ---
+
+- name: Création du compte système alertmanager (non privilégié)
+  user:
+    name: alertmanager
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Création des répertoires Alertmanager
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: alertmanager
+    group: alertmanager
+    mode: "0750"
+  loop:
+    - /etc/alertmanager
+    - /var/lib/alertmanager
+
+- name: Téléchargement de l'archive Alertmanager
+  get_url:
+    url: "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager_version }}/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+    dest: "/tmp/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+    mode: "0644"
+
+- name: Extraction du binaire Alertmanager
+  unarchive:
+    src: "/tmp/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/alertmanager-{{ alertmanager_version }}.linux-amd64/alertmanager"
+
+- name: Installation des binaires Alertmanager
+  copy:
+    src: "/tmp/alertmanager-{{ alertmanager_version }}.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+  loop:
+    - alertmanager
+    - amtool
+
+- name: Déploiement de alertmanager.yml (route Slack, no_log car contient le webhook)
+  template:
+    src: alertmanager.yml.j2
+    dest: /etc/alertmanager/alertmanager.yml
+    owner: alertmanager
+    group: alertmanager
+    mode: "0640"
+  notify: Redémarrer alertmanager
+  no_log: true
+
+- name: Déploiement du service systemd Alertmanager
+  template:
+    src: alertmanager.service.j2
+    dest: /etc/systemd/system/alertmanager.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: alertmanager_unit
+
+- name: Rechargement systemd si le service Alertmanager a changé
+  systemd:
+    daemon_reload: true
+  when: alertmanager_unit.changed
+
+- name: Activation et démarrage d'Alertmanager
+  systemd:
+    name: alertmanager
+    enabled: true
+    state: started
+
+# --- Jalon B : Zabbix Server (chiffrement PSK) ---
+#
+# NOTE IMPORTANTE : la validation du PSK au niveau TLS exige que le serveur
+# connaisse à l'avance la PSK associée à l'identité envoyée par l'agent
+# (le handshake TLS-PSK ne fonctionne que si les deux parties ont déjà la clé).
+# Cette association se fait normalement via le frontend/API Zabbix (Jalon C,
+# pas encore déployé à ce stade). En attendant, on enregistre l'hôte et sa PSK
+# directement en base via un script SQL idempotent (INSERT IGNORE). C'est un
+# contournement pragmatique documenté, pas la méthode recommandée en prod :
+# à remplacer par un enregistrement via l'API Zabbix dès que le frontend
+# (Grafana/Jalon C) sera en place.
+
+- name: Téléchargement du paquet zabbix-release (dépôt officiel Zabbix {{ zabbix_version }})
+  get_url:
+    url: "https://repo.zabbix.com/zabbix/{{ zabbix_version }}/debian/pool/main/z/zabbix-release/zabbix-release_{{ zabbix_version }}-2+debian12_all.deb"
+    dest: "/tmp/zabbix-release_{{ zabbix_version }}-2+debian12_all.deb"
+    mode: "0644"
+
+- name: Installation du paquet de dépôt zabbix-release
+  apt:
+    deb: "/tmp/zabbix-release_{{ zabbix_version }}-2+debian12_all.deb"
+  register: zabbix_repo_install
+
+- name: Mise à jour du cache APT après ajout du dépôt Zabbix
+  apt:
+    update_cache: true
+  when: zabbix_repo_install.changed
+
+- name: Installation de MySQL Server et du client
+  apt:
+    name:
+      - mariadb-server
+      - python3-pymysql
+    state: present
+
+- name: Activation et démarrage de MariaDB
+  systemd:
+    name: mariadb
+    enabled: true
+    state: started
+
+- name: Installation de Zabbix Server (MySQL) et des scripts SQL
+  apt:
+    name:
+      - zabbix-server-mysql
+      - zabbix-sql-scripts
+    state: present
+
+- name: Création de la base de données Zabbix
+  command: >
+    mysql -uroot -e
+    "CREATE DATABASE IF NOT EXISTS {{ zabbix_db_name }}
+     CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;"
+  register: zabbix_db_create
+  changed_when: "'already exists' not in zabbix_db_create.stderr"
+
+- name: Création de l'utilisateur MySQL Zabbix avec privilèges dédiés
+  command: >
+    mysql -uroot -e
+    "CREATE USER IF NOT EXISTS '{{ zabbix_db_user }}'@'localhost' IDENTIFIED BY '{{ zabbix_db_password }}';
+     GRANT ALL PRIVILEGES ON {{ zabbix_db_name }}.* TO '{{ zabbix_db_user }}'@'localhost';
+     FLUSH PRIVILEGES;"
+  changed_when: true
+
+- name: Vérification si le schéma Zabbix est déjà importé (table 'hosts' existe)
+  command: >
+    mysql -u{{ zabbix_db_user }} -p{{ zabbix_db_password }} {{ zabbix_db_name }}
+    -e "SHOW TABLES LIKE 'hosts';"
+  register: zabbix_schema_check
+  changed_when: false
+  no_log: true
+
+- name: Import du schéma SQL initial Zabbix (uniquement si absent)
+  shell: >
+    zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz |
+    mysql -u{{ zabbix_db_user }} -p{{ zabbix_db_password }} {{ zabbix_db_name }}
+  when: "'hosts' not in zabbix_schema_check.stdout"
+  no_log: true
+
+- name: Configuration de zabbix_server.conf
+  template:
+    src: zabbix_server.conf.j2
+    dest: /etc/zabbix/zabbix_server.conf
+    owner: zabbix
+    group: zabbix
+    mode: "0640"
+  notify: Redémarrer zabbix-server
+
+- name: Activation et démarrage de Zabbix Server
+  systemd:
+    name: zabbix-server
+    enabled: true
+    state: started
+
+- name: Enregistrement de l'hôte web-prod avec sa PSK (contournement SQL documenté ci-dessus)
+  template:
+    src: register_host.sql.j2
+    dest: /tmp/register_host.sql
+    mode: "0600"
+  no_log: true
+
+- name: Exécution du script d'enregistrement de l'hôte (idempotent, INSERT IGNORE)
+  shell: >
+    mysql -u{{ zabbix_db_user }} -p{{ zabbix_db_password }} {{ zabbix_db_name }} < /tmp/register_host.sql
+  changed_when: true
+  no_log: true
+
+- name: Suppression du script SQL temporaire (contenait la PSK en clair)
+  file:
+    path: /tmp/register_host.sql
+    state: absent
+
+# --- Jalon C : Loki (réception des logs) ---
+
+- name: Création du compte système loki (non privilégié)
+  user:
+    name: loki
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Création des répertoires Loki
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: loki
+    group: loki
+    mode: "0750"
+  loop:
+    - /etc/loki
+    - /var/lib/loki
+
+- name: Téléchargement de l'archive Loki
+  get_url:
+    url: "https://github.com/grafana/loki/releases/download/v{{ loki_promtail_version }}/loki-linux-amd64.zip"
+    dest: "/tmp/loki-linux-amd64.zip"
+    mode: "0644"
+
+- name: Extraction du binaire Loki
+  unarchive:
+    src: /tmp/loki-linux-amd64.zip
+    dest: /tmp
+    remote_src: true
+    creates: /tmp/loki-linux-amd64
+
+- name: Installation du binaire Loki
+  copy:
+    src: /tmp/loki-linux-amd64
+    dest: /usr/local/bin/loki
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+
+- name: Déploiement de la configuration Loki (stockage filesystem local, mono-instance)
+  template:
+    src: loki-config.yml.j2
+    dest: /etc/loki/loki-config.yml
+    owner: loki
+    group: loki
+    mode: "0640"
+  notify: Redémarrer loki
+
+- name: Déploiement du service systemd Loki
+  template:
+    src: loki.service.j2
+    dest: /etc/systemd/system/loki.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: loki_unit
+
+- name: Rechargement systemd si le service Loki a changé
+  systemd:
+    daemon_reload: true
+  when: loki_unit.changed
+
+- name: Activation et démarrage de Loki
+  systemd:
+    name: loki
+    enabled: true
+    state: started
+
+# --- Jalon C : Grafana (dashboarding unifié) ---
+
+- name: Création du compte système grafana (non privilégié)
+  user:
+    name: grafana
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Téléchargement de l'archive Grafana
+  get_url:
+    url: "https://dl.grafana.com/grafana/release/{{ grafana_version }}/{{ grafana_archive_filename }}"
+    dest: "/tmp/{{ grafana_archive_filename }}"
+    mode: "0644"
+
+- name: Extraction de l'archive Grafana dans /usr/local
+  unarchive:
+    src: "/tmp/{{ grafana_archive_filename }}"
+    dest: /usr/local
+    remote_src: true
+    creates: "/usr/local/grafana-{{ grafana_version }}"
+
+- name: Lien symbolique stable vers le répertoire Grafana versionné
+  file:
+    src: "/usr/local/grafana-{{ grafana_version }}"
+    dest: /usr/local/grafana
+    state: link
+
+- name: Création des répertoires de données Grafana
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0750"
+  loop:
+    - /etc/grafana
+    - /etc/grafana/tls
+    - /var/lib/grafana
+    - /var/lib/grafana/plugins
+    - /var/log/grafana
+
+- name: Génération du certificat TLS auto-signé dédié à Grafana (si absent)
+  command: >
+    openssl req -x509 -newkey rsa:4096 -nodes
+    -keyout /etc/grafana/tls/grafana.key
+    -out /etc/grafana/tls/grafana.crt
+    -days 825
+    -subj "/C=FR/ST=Ile-de-France/L=Paris/O=M2-Shop/OU=Supervision/CN=supervision.m2shop.local"
+    -addext "subjectAltName=IP:10.0.10.5,DNS:supervision"
+  args:
+    creates: /etc/grafana/tls/grafana.crt
+
+- name: Permissions sur la clé privée TLS Grafana
+  file:
+    path: /etc/grafana/tls/grafana.key
+    owner: grafana
+    group: grafana
+    mode: "0640"
+
+- name: Permissions sur le certificat TLS Grafana
+  file:
+    path: /etc/grafana/tls/grafana.crt
+    owner: grafana
+    group: grafana
+    mode: "0644"
+
+- name: Déploiement de grafana.ini (chemins explicites, plus fiable que les overrides CLI)
+  template:
+    src: grafana.ini.j2
+    dest: /etc/grafana/grafana.ini
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  notify: Redémarrer grafana
+
+- name: Déploiement de la configuration Grafana (datasources provisionnées Prometheus + Loki)
+  template:
+    src: grafana-datasources.yml.j2
+    dest: /usr/local/grafana/conf/provisioning/datasources/datasources.yml
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  notify: Redémarrer grafana
+
+- name: Déploiement du provider de dashboards Grafana
+  template:
+    src: grafana-dashboards-provider.yml.j2
+    dest: /usr/local/grafana/conf/provisioning/dashboards/dashboards.yml
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  notify: Redémarrer grafana
+
+- name: Création du répertoire des dashboards JSON
+  file:
+    path: /usr/local/grafana/conf/provisioning/dashboards/json
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0750"
+
+- name: Déploiement du dashboard unifié M2-Shop (métriques + logs)
+  template:
+    src: dashboard-m2shop.json.j2
+    dest: /usr/local/grafana/conf/provisioning/dashboards/json/m2shop-unified.json
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  notify: Redémarrer grafana
+
+- name: Déploiement du service systemd Grafana
+  template:
+    src: grafana.service.j2
+    dest: /etc/systemd/system/grafana.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: grafana_unit
+
+- name: Rechargement systemd si le service Grafana a changé
+  systemd:
+    daemon_reload: true
+  when: grafana_unit.changed
+
+- name: Activation et démarrage de Grafana
+  systemd:
+    name: grafana
+    enabled: true
+    state: started
