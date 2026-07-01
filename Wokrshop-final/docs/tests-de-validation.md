@@ -1,13 +1,13 @@
 # Tests de Validation — TP Observabilité Sécurisée
 # M2-Shop — Protocole de recette technique
 #
-# Ce fichier répertorie toutes les commandes permettant de rejouer
-# les tests de validation des Jalons A, B, C et D avant toute remise
-# en service après incident ou reconstruction de l'infrastructure.
+ Ce fichier répertorie toutes les commandes permettant de rejouer
+ les tests de validation des Jalons A, B, C et D avant toute remise
+ en service après incident ou reconstruction de l'infrastructure.
 #
-# Convention d'exécution : toutes les commandes sont lancées depuis
-# l'hôte Windows via PowerShell (vagrant ssh ...) ou depuis les VMs
-# elles-mêmes. Aucune commande n'est exécutée depuis l'hôte Ansible.
+ Convention d'exécution : toutes les commandes sont lancées depuis
+ l'hôte Windows via PowerShell (vagrant ssh ...) ou depuis les VMs
+ elles-mêmes. Aucune commande n'est exécutée depuis l'hôte Ansible.
 #
 # Statut attendu de chaque test : ✅ = résultat conforme
 #                                  ❌ = anomalie à investiguer
