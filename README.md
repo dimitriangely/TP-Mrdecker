@@ -173,11 +173,14 @@ web-prod (10.0.20.20)  ←→  fw-router  ←→  supervision (10.0.10.5)
 
 ### Jalons
 
-| Jalon | Contenu |
-|-------|---------|
-| **A** | Cloisonnement `nftables`, routage statique, matrice de flux |
-| **B** | Node Exporter TLS + Basic Auth, Prometheus, Zabbix Agent2 PSK |
-| **C+** | Grafana, Loki, Promtail, Alertmanager, dashboards (en cours / à compléter selon avancement) |
+| Jalon | Contenu | Statut |
+|-------|---------|--------|
+| **A** | Cloisonnement `nftables`, routage statique inter-zones, matrice de flux, défense en profondeur | Validé en VM |
+| **B** | Node Exporter TLS v1.3 + Basic Auth (bcrypt), Prometheus scrape HTTPS, Zabbix Agent2 mode actif + PSK | Validé en VM |
+| **C** | Nginx fil rouge, Promtail → Loki, Grafana HTTPS, datasources Prometheus + Loki, dashboard unifié M2-Shop | Validé en VM |
+| **D** | Alertmanager → Slack, alerte NginxDown, webhook auto-healing, sudoers chirurgical (`restart nginx`) | Validé en VM (< 60 s) |
+
+Détail des tests de recette : [`Wokrshop-final/docs/tests-de-validation.md`](Wokrshop-final/docs/tests-de-validation.md).
 
 ### Contenu du dossier
 
