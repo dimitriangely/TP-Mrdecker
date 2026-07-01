@@ -1,6 +1,5 @@
 # Tests de Validation — TP Observabilité Sécurisée
 
-#
  Ce fichier répertorie toutes les commandes permettant de rejouer
  les tests de validation des Jalons A, B, C et D avant toute remise
  en service après incident ou reconstruction de l'infrastructure.
