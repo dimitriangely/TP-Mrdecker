@@ -1,5 +1,5 @@
 # Tests de Validation — TP Observabilité Sécurisée
-# M2-Shop — Protocole de recette technique
+
 #
  Ce fichier répertorie toutes les commandes permettant de rejouer
  les tests de validation des Jalons A, B, C et D avant toute remise
