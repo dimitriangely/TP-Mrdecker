@@ -166,6 +166,7 @@ contrairement à une capture sur un flux non chiffré.
 ```
 .
 ├── Vagrantfile
+├── Rendu-Final-DAE-Complet-M2Shop-Observabilite-Securisee.md
 ├── ansible/
 │   ├── site.yml
 │   ├── inventory/hosts.ini
@@ -175,8 +176,18 @@ contrairement à une capture sur un flux non chiffré.
 │       ├── web-prod/
 │       └── supervision/
 └── docs/
-    └── matrice-de-flux.md   (alimente la Section 1 du DAE)
+    ├── correspondance-grille-bloc5.md   (index C5.1.1 → C5.4.1)
+    ├── matrice-de-flux.md
+    ├── tests-de-validation.md
+    ├── demo-jury.md
+    ├── C5.1.1-C5.1.2-cartographie-et-contraintes.md
+    ├── hld-lld-architecture.md
+    ├── architecture-m2shop.png
+    ├── C5.3.1-C5.3.2-protocole-integration.md
+    └── C5.4.1-guide-utilisation-sre.md
 ```
+
+Soutenance Bloc 5 : commencer par `docs/correspondance-grille-bloc5.md`.
 
 ## Notes
 

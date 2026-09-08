@@ -1,5 +1,8 @@
 # Tests de Validation — TP Observabilité Sécurisée
 
+**C5.2.2** — cahier de recettes (scénarios, étapes, résultats attendus).  
+**C5.3.3** — campagne de tests : compte-rendu du 7 septembre 2026 en fin de fichier.
+
  Ce fichier répertorie toutes les commandes permettant de rejouer
  les tests de validation des Jalons A, B, C et D avant toute remise
  en service après incident ou reconstruction de l'infrastructure.
@@ -545,3 +548,25 @@ vagrant ssh web-prod -c "sudo grep -E 'Déclenchement|réussie' /var/log/healer/
 | D | Crash Test | `systemctl stop nginx` → attente 15s | nginx = active |
 | D | Logs auto-healing | `cat remediation.log` | code retour=0, réussie |
 | D | Délai de remédiation | timestamps remediation.log | < 60 secondes |
+
+---
+
+## Compte-rendu de campagne — 7 septembre 2026 (C5.3.3)
+
+Campagne rejouée depuis l'hôte Windows (PowerShell, `vagrant ssh`). Conformité au plan ci-dessus.
+
+| Jalon | Test | Résultat observé | Statut |
+| --- | --- | --- | --- |
+| A | Interfaces `eth1`/`eth2` | web-prod `.20.20`, fw-router `.20.1`/`.10.1`, supervision `.10.5` | Conforme |
+| A | Routes statiques | `10.0.10.0/24 via 10.0.20.1` ; `10.0.20.0/24 via 10.0.10.1` | Conforme |
+| A | Port 22 inter-zones | `TIMEOUT_OK` | Conforme |
+| B | Node Exporter sans auth | HTTP **401** | Conforme |
+| B | Prometheus target | `"health":"up"`, `lastError` vide | Conforme |
+| B | Zabbix Agent2 | Erreurs d'ordre de boot puis `heartbeat … working again` (20:09 UTC) | Conforme |
+| C | Loki labels | `nginx_access` puis `nginx_error` (après ligne test) | Conforme |
+| C | Grafana Explore + dashboard M2-Shop | Ligne `test-loki-nginx-error` ; 200 + 404 + CPU/mémoire | Conforme |
+| D | Préchecks | alertmanager/webhook `active` ; sudoers 1 commande ; métrique nginx `"1"` | Conforme |
+| D | Crash test | `stop nginx` → 20 s → `active` | Conforme |
+| D | Logs healer | 21:13:44Z firing → 204 → `Remédiation réussie` (même seconde) | Conforme |
+
+**Conclusion** : architecture intégrée conformément au cahier de recettes. Écarts hors recette (non bloquants) : webhook 9095 en HTTP, pas de politique de backup (PRA = IaC), Guest Additions 6.0 vs VirtualBox 7.2.

@@ -1,23 +1,38 @@
 # Matrice de Flux Réglementaire — TP Observabilité Sécurisée
 
-Document destiné à la Section 1 (DAT) du Dossier d'Architecture et d'Exploitation.
+**C5.1.3** — synthèse technique du cahier des charges (flux autorisés / interdits).  
+**C5.2.1** — contrainte d'architecture (Zero-Trust). Alimente le DAE § 1.4.
 
-| Zone Source  | IP Source    | Zone Dest.    | IP Dest.     | Protocole | Port  | Sens d'initiation     | Justification                          |
-|---------------|--------------|----------------|--------------|-----------|-------|------------------------|------------------------------------------|
-| DMZ Admin     | 10.0.10.5    | DMZ Prod       | 10.0.20.20   | TCP       | 9100  | Admin -> Prod          | Scraping Prometheus, TLS v1.3 + Basic Auth |
-| DMZ Prod      | 10.0.20.20   | DMZ Admin      | 10.0.10.5    | TCP       | 10051 | Prod -> Admin          | Zabbix Agent mode Actif (Push), PSK chiffré |
-| DMZ Prod      | 10.0.20.20   | DMZ Admin      | 10.0.10.5    | TCP       | 3100  | Prod -> Admin          | Promtail -> Loki, envoi des logs Nginx     |
-| DMZ Admin     | 10.0.10.5    | DMZ Prod       | 10.0.20.20   | TCP       | 9095  | Admin -> Prod          | Alertmanager -> webhook receiver, déclenchement auto-healing |
-| DMZ Prod      | 10.0.20.20   | Internet       | -            | TCP       | 443/80| Prod (entrant public)  | Flux web public légitime (Nginx fil rouge) |
-| DMZ Admin     | 10.0.10.5    | Internet       | -            | TCP       | 443   | Admin -> Internet      | Webhook sortant unique vers Slack/Discord  |
-| Hôte (SRE)    | -            | DMZ Admin      | 10.0.10.5    | TCP       | 3000  | SRE -> Admin           | Accès Grafana en HTTPS uniquement          |
+Deux plans : **FORWARD inter-zones** (fw-router uniquement) et **INPUT/OUTPUT hôte** (SSH, ICMP, DNS, site public, Grafana). Ne pas les fusionner : Nginx 80/443 et SSH 22 n'apparaissent pas dans la chaîne FORWARD.
+
+## Plan inter-zones (FORWARD fw-router)
+
+| Zone Source  | IP Source    | Zone Dest.    | IP Dest.     | Protocole | Port  | Chiffrement | Justification                          |
+|---------------|--------------|----------------|--------------|-----------|-------|-------------|----------------|
+| DMZ Admin     | 10.0.10.5    | DMZ Prod       | 10.0.20.20   | TCP       | 9100  | TLS v1.3 + Basic Auth | Scraping Prometheus (PULL) |
+| DMZ Prod      | 10.0.20.20   | DMZ Admin      | 10.0.10.5    | TCP       | 10051 | TLS-PSK 64 hex | Zabbix Agent mode Actif (Push) |
+| DMZ Prod      | 10.0.20.20   | DMZ Admin      | 10.0.10.5    | TCP       | 3100  | HTTP (réseau isolé) | Promtail -> Loki, logs Nginx |
+| DMZ Admin     | 10.0.10.5    | DMZ Prod       | 10.0.20.20   | TCP       | 9095  | **HTTP en clair** | Alertmanager -> webhook `/alert` (auto-healing) |
+
+## Plan hôte (INPUT / OUTPUT locaux, hors FORWARD)
+
+| Source | Destination | Proto | Port | Chaîne | Justification |
+|--------|-------------|-------|------|--------|----------------|
+| Hôte SRE / Vagrant (NAT eth0) | les 3 VMs | TCP | 22 | INPUT web-prod, fw-router, supervision | SSH labo. Interdit en FORWARD (timeout inter-zones). |
+| Any (destiné à l'hôte) | VM locale | ICMP | echo | INPUT des 3 VMs | Diagnostic. Pas de FORWARD ICMP. |
+| VM locale | Internet (NAT) | UDP/TCP | 53 | OUTPUT des 3 VMs | DNS (APT / GitHub). |
+| web-prod, fw-router | Internet (NAT) | TCP | 80/443 | OUTPUT | Mises à jour paquets. |
+| supervision | Internet | TCP | 443 | OUTPUT supervision | Webhook Slack `#alertes-m2shop`. |
+| Internet / client | web-prod 10.0.20.20 | TCP | 80/443 | **INPUT web-prod uniquement** | Nginx public. Absent de FORWARD fw-router. |
+| Hôte Windows SRE | supervision | TCP | 3000 (invité) | INPUT supervision | Grafana HTTPS dans la VM ; depuis Windows : `127.0.0.1:3443` → guest 3000. |
 
 ## Règles explicitement interdites (et vérifiées au protocole de recette)
 
-- Aucun flux entrant initié depuis DMZ Admin vers DMZ Prod en dehors du port 9100/TCP.
+- Aucun flux FORWARD initié depuis DMZ Admin vers DMZ Prod en dehors des ports 9100/TCP et 9095/TCP.
 - Aucun flux initié par le serveur Zabbix (Admin) vers l'agent (Prod) : le mode Push est strict, l'agent initie toujours.
 - Toute tentative de connexion directe web-prod <-> supervision en dehors de fw-router est physiquement impossible (pas de réseau privé commun, cf. Vagrantfile).
-- Toute tentative depuis web-prod vers supervision sur un port autre que 10051 doit expirer (timeout).
+- Toute tentative depuis web-prod vers supervision sur un port autre que 10051 et 3100 doit expirer (timeout).
+- SSH 22, ICMP, DNS et le site public Nginx ne traversent pas fw-router.
 
 ## Statut d'implémentation (mis à jour au fil des sessions)
 
@@ -31,17 +46,13 @@ Document destiné à la Section 1 (DAT) du Dossier d'Architecture et d'Exploitat
 
 ## TP COMPLET — Bilan final
 
-Les 4 jalons du sujet (A, B, C, D) sont implémentés et validés en conditions
-réelles sur les 3 VMs Vagrant. Reste à finaliser pour la remise : le Dossier
-d'Architecture et d'Exploitation (DAE) complet en PDF (Sections 1, 2, 3), en
-s'appuyant sur cette matrice de flux, les captures de validation déjà
-réalisées, et les incidents documentés dans le README.
+Les 4 jalons (A, B, C, D) sont implémentés et **revalidés en VM le 7 septembre 2026**. Compte-rendu : `docs/tests-de-validation.md` (C5.3.3). Dossier de soutenance : `docs/correspondance-grille-bloc5.md`.
 
-- [x] Jalon A — fw-router : politique DROP par défaut, FORWARD limité à 9100 et 10051 (validé en VM : timeout sur port 22 non autorisé, refus de connexion explicite sur 10051 autorisé)
-- [x] Jalon A — défense en profondeur nftables sur web-prod et supervision (validé en VM)
-- [x] Jalon A — routage statique inter-zones via fw-router (validé en VM, persistant via systemd)
-- [x] Jalon B — TLS v1.3 + bcrypt sur Node Exporter (validé en VM : TLSv1.3 négocié, 401 sans credentials)
-- [x] Jalon B — Prometheus scrape HTTPS + Basic Auth + insecure_skip_verify (validé en VM : target health=up, lastError vide)
-- [x] Jalon B — PSK Zabbix 64 hex (validé en VM via capture tcpdump : handshakes TLS-PSK répétés réussis, identité PSK visible en clair comme attendu, payload chiffré)
-- [ ] Jalon C — Promtail -> Loki, Grafana dashboard unifié (à faire)
-- [ ] Jalon D — Alerting webhook + script auto-healing + sudoers chirurgical (à faire)
+- [x] Jalon A — fw-router : DROP par défaut, FORWARD 9100, 10051, 3100, 9095 (timeout SSH 22, routes statiques)
+- [x] Jalon A — défense en profondeur nftables web-prod et supervision
+- [x] Jalon A — routage statique inter-zones via fw-router (systemd)
+- [x] Jalon B — TLS v1.3 + bcrypt Node Exporter (401 sans credentials)
+- [x] Jalon B — Prometheus scrape HTTPS + Basic Auth (`health=up`)
+- [x] Jalon B — PSK Zabbix (heartbeat working again 20:09 UTC le 7 sept.)
+- [x] Jalon C — Promtail → Loki (`nginx_access`, `nginx_error`) + dashboard Grafana M2-Shop
+- [x] Jalon D — crash test 21:13:44 UTC : firing → webhook 204 → Nginx relancé < 1 s
