@@ -1,4 +1,4 @@
-# TP-Mrdecker — Supervision et Observabilité
+# Supervision et Observabilité
 
 Dépôt regroupant l'ensemble des travaux pratiques du module **Supervision / Observabilité**. Chaque séance introduit un outil ou un concept, puis le **Workshop final** les combine dans une architecture sécurisée de type Zero-Trust.
 

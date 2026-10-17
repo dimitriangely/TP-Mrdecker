@@ -46,7 +46,7 @@ Deux plans : **FORWARD inter-zones** (fw-router uniquement) et **INPUT/OUTPUT h�
 
 ## TP COMPLET — Bilan final
 
-Les 4 jalons (A, B, C, D) sont implémentés et **revalidés en VM le 7 septembre 2026**. Compte-rendu : `docs/tests-de-validation.md` (C5.3.3). Dossier de soutenance : `docs/correspondance-grille-bloc5.md`.
+Les 4 jalons (A, B, C, D) sont implémentés et **revalidés en VM le 7 septembre 2026**. Compte-rendu : `docs/tests-de-validation.md` (C5.3.3). Dossier de soutenance : `docs/correspondance-grille-bloc5.md`. Le Dossier d'Architecture et d'Exploitation (DAE) complet (Sections 1, 2, 3) est disponible dans le fichier [`Rendu-Final-DAE-Complet-M2Shop-Observabilite-Securisee.pdf`](../Rendu-Final-DAE-Complet-M2Shop-Observabilite-Securisee.pdf).
 
 - [x] Jalon A — fw-router : DROP par défaut, FORWARD 9100, 10051, 3100, 9095 (timeout SSH 22, routes statiques)
 - [x] Jalon A — défense en profondeur nftables web-prod et supervision

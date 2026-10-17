@@ -19,6 +19,16 @@ inter-zone transite obligatoirement par fw-router.
 
 ## État d'avancement
 
+Les **4 jalons** (A, B, C, D) sont implémentés et **validés en VM**. Le détail des
+commandes de recette est dans [`docs/tests-de-validation.md`](docs/tests-de-validation.md).
+
+| Jalon | Contenu | Statut |
+|-------|---------|--------|
+| **A** | Cloisonnement `nftables`, routage statique inter-zones, défense en profondeur | Validé en VM |
+| **B** | Node Exporter TLS v1.3 + Basic Auth, Prometheus scrape HTTPS, Zabbix Agent2 PSK | Validé en VM |
+| **C** | Nginx fil rouge, Promtail → Loki, Grafana HTTPS, dashboard unifié M2-Shop | Validé en VM |
+| **D** | Alertmanager → Slack, alerte NginxDown, webhook auto-healing, sudoers chirurgical | Validé en VM (< 60 s) |
+
 **Jalon A (validé en VM)** : socle réseau Zero-Trust complet — cloisonnement nftables,
 routage statique inter-zones, timeout sur ports non autorisés, refus de connexion
 explicite sur les ports autorisés sans service en écoute.
@@ -32,10 +42,26 @@ explicite sur les ports autorisés sans service en écoute.
 - Zabbix Agent2 (`web-prod`) en mode Actif strict + Zabbix Server/MariaDB
   (`supervision`), chiffrement PSK 64 hex. L'hôte est enregistré côté serveur
   via un script SQL idempotent (contournement documenté en l'absence de
-  frontend Zabbix, qui arrivera au Jalon C) — **validé en VM** par capture
-  tcpdump : handshakes TLS-PSK répétés réussis sur le port 10051, identité
-  PSK visible en clair (normal, ce n'est pas un secret), payload applicatif
-  intégralement chiffré.
+  frontend Zabbix) — **validé en VM** par capture tcpdump : handshakes TLS-PSK
+  répétés réussis sur le port 10051, identité PSK visible en clair (normal, ce
+  n'est pas un secret), payload applicatif intégralement chiffré.
+
+**Jalon C (validé en VM)** :
+- Nginx « fil rouge » sur `web-prod` : HTTPS public (certificat auto-signé),
+  redirection HTTP→HTTPS, logs `access.log` / `error.log` prêts pour Promtail
+- Promtail (`web-prod`) → Loki (`supervision`) : targets ready, labels
+  `nginx_access` / `nginx_error` confirmés côté Loki
+- Grafana (`supervision`) en HTTPS only, datasources Prometheus + Loki
+  provisionnées automatiquement, dashboard unifié M2-Shop (req/s, erreurs
+  4xx/5xx, CPU, mémoire, logs bruts)
+
+**Jalon D (validé en VM)** :
+- Alerte `NginxDown` (Prometheus + Alertmanager → Slack) : déclenchement quasi
+  instantané (< 1 s), message Slack conforme (heure, hôte, impact)
+- Auto-healing : webhook → script `restart-nginx` → Nginx relancé ; délai total
+  observé **5 s** (exigence sujet : < 60 s) ; alerte `resolved` reçue sur Slack
+- Sudoers chirurgical : une seule commande exacte autorisée
+  (`systemctl restart nginx.service`), aucune élévation root globale
 
 #### Incidents rencontrés et résolus (Jalon B Zabbix)
 
@@ -177,8 +203,8 @@ contrairement à une capture sur un flux non chiffré.
 │       └── supervision/
 └── docs/
     ├── correspondance-grille-bloc5.md   (index C5.1.1 → C5.4.1)
-    ├── matrice-de-flux.md
-    ├── tests-de-validation.md
+    ├── matrice-de-flux.md               (alimente la Section 1 du DAE)
+    ├── tests-de-validation.md           (protocole de recette Jalons A–D)
     ├── demo-jury.md
     ├── C5.1.1-C5.1.2-cartographie-et-contraintes.md
     ├── hld-lld-architecture.md
