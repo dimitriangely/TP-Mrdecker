@@ -258,5 +258,5 @@ vagrant destroy -f      # Supprimer complètement l'environnement
 
 ## Contexte
 
-Travaux pratiques réalisés dans le cadre du module de supervision (TP Mr Decker).  
+Travaux pratiques réalisés dans le cadre du module de supervision.  
 Environnements de laboratoire : **ne pas réutiliser les mots de passe par défaut en production**.
